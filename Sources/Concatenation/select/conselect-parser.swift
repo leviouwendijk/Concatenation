@@ -22,44 +22,62 @@ public struct Conselect {
         ignoreMap: IgnoreMap? = nil
     ) throws -> [URL] {
         var results = [URL]()
+        var seen = Set<URL>()
 
         if !patterns.isEmpty {
             let scanner = try FileScanner(
-                    concatRoot: root,
-                    maxDepth: maxDepth,
-                    includePatterns: patterns,
-                    excludeFilePatterns: [],
-                    excludeDirPatterns: [],
-                    includeDotfiles: includeDotfiles,
-                    ignoreMap: ignoreMap
+                concatRoot: root,
+                maxDepth: maxDepth,
+                includePatterns: patterns,
+                excludeFilePatterns: [],
+                excludeDirPatterns: [],
+                includeDotfiles: includeDotfiles,
+                ignoreMap: ignoreMap
             )
-            results += try scanner.scan()
-        }
-
-        for dir in directories {
-            let full = (root as NSString).appendingPathComponent(dir)
-            let scanner = try FileScanner(
-                    concatRoot: full,
-                    maxDepth: maxDepth,
-                    includePatterns: ["*"],
-                    excludeFilePatterns: [],
-                    excludeDirPatterns: [],
-                    includeDotfiles: includeDotfiles,
-                    ignoreMap: ignoreMap
-                    )
-            results += try scanner.scan()
-        }
-
-        for file in files {
-            let path = (root as NSString).appendingPathComponent(file)
-            let url = URL(fileURLWithPath: path)
-            if FileManager.default.fileExists(atPath: url.path) {
+            for url in try scanner.scan() {
+                guard seen.insert(url).inserted else { continue }
                 results.append(url)
             }
         }
 
-        let unique = Array(Set(results))
-        return unique.sorted { $0.path < $1.path }
+        for dir in directories {
+            let full = (root as NSString).appendingPathComponent(dir)
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: full, isDirectory: &isDir),
+                  isDir.boolValue
+            else {
+                print("Warning: ‘\(full)’ is not a directory, skipping")
+                continue
+            }
+            let scanner = try FileScanner(
+                concatRoot: full,
+                maxDepth: maxDepth,
+                includePatterns: ["*"],
+                excludeFilePatterns: [],
+                excludeDirPatterns: [],
+                includeDotfiles: includeDotfiles,
+                ignoreMap: ignoreMap
+            )
+            for url in try scanner.scan() {
+                guard seen.insert(url).inserted else { continue }
+                results.append(url)
+            }
+        }
+
+        for file in files {
+            let path = (root as NSString).appendingPathComponent(file)
+            if FileManager.default.fileExists(atPath: path) {
+                let url = URL(fileURLWithPath: path)
+                if seen.insert(url).inserted {
+                    results.append(url)
+                }
+            } else {
+                print("Warning: file ‘\(path)’ not found, skipping")
+            }
+        }
+
+        // sorted & unique
+        return results.sorted { $0.path < $1.path }
     }
 }
 
