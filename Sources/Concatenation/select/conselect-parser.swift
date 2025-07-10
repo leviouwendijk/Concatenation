@@ -41,20 +41,31 @@ public struct Conselect {
         }
 
         for dirName in directories {
-            let fileManager = FileManager.default
+            let fm = FileManager.default
+            var isDir: ObjCBool = false
+
+            guard fm.fileExists(atPath: root, isDirectory: &isDir),
+                  isDir.boolValue
+            else { continue }
+
+            let rootURL = URL(fileURLWithPath: root)
             let keys: [URLResourceKey] = [.isDirectoryKey]
-            let walker = fileManager.enumerator(
-                at: URL(fileURLWithPath: root),
+            let walker = fm.enumerator(
+                at: rootURL,
                 includingPropertiesForKeys: keys,
                 options: [.skipsHiddenFiles],
-                errorHandler: nil
+                errorHandler: { (url, _) in
+                    return true
+                }
             )!
-            for case let url as URL in walker {
-                let vals = try url.resourceValues(forKeys: Set(keys))
+
+            for case let dirURL as URL in walker {
+                let vals = try dirURL.resourceValues(forKeys: Set(keys))
                 guard vals.isDirectory == true else { continue }
-                guard url.lastPathComponent == dirName else { continue }
+                guard dirURL.lastPathComponent == dirName else { continue }
+
                 let scanner = try FileScanner(
-                    concatRoot: url.path,
+                    concatRoot: dirURL.path,
                     maxDepth: maxDepth,
                     includePatterns: ["*"],
                     excludeFilePatterns: [],
@@ -62,6 +73,7 @@ public struct Conselect {
                     includeDotfiles: includeDotfiles,
                     ignoreMap: ignoreMap
                 )
+
                 for fileURL in try scanner.scan() {
                     guard seen.insert(fileURL).inserted else { continue }
                     results.append(fileURL)
