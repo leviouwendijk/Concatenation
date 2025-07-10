@@ -12,6 +12,15 @@ public struct IgnoreMap {
     private let fileRegexes: [NSRegularExpression]
     private let dirRegexes: [NSRegularExpression]
 
+    public init() {
+        self.ignoreFiles = []
+        self.ignoreDirectories = []
+        self.obscureValues = [:]
+
+        self.fileRegexes = []
+        self.dirRegexes = []
+    }
+
     public init(
         ignoreFiles: [String],
         ignoreDirectories: [String],
