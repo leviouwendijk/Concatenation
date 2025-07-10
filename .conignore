@@ -1,0 +1,18 @@
+
+[IgnoreFiles]
+*.env
+*.log
+*.pem
+*.pub
+*.conf
+secrets.txt
+
+[IgnoreDirectories]
+env/
+build/
+.build/
+*/backups/
+
+[Obscure]
+apiKey : verbose
+
