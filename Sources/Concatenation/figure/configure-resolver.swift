@@ -1,5 +1,10 @@
 import Foundation
 
+public struct FilteredSnippet {
+    public let file: URL
+    public let lines: [String]
+}
+
 public struct ConfigureResolver {
     private let root: String
     private let maxDepth: Int?
@@ -18,10 +23,10 @@ public struct ConfigureResolver {
         self.ignoreMap = ignoreMap
     }
 
-    public func resolve(filters: [ConfigureParser.Filter]) throws -> [(file: URL, snippet: [String])] {
-        var out = [(URL, [String])]()
+    public func resolve(filters: [ConfigureParser.Filter]) throws -> [FilteredSnippet] {
+        var out = [FilteredSnippet]()
         for f in filters {
-            let fs = try FileScanner(
+            let scanner = try FileScanner(
                 root: root,
                 maxDepth: maxDepth,
                 includePatterns: [f.glob],
@@ -31,14 +36,19 @@ public struct ConfigureResolver {
                 includeEmpty: false,
                 ignoreMap: ignoreMap
             )
-            let matches = try fs.scan()
+            let matches = try scanner.scan()
             for fileURL in matches {
-                let lines = try String(contentsOf: fileURL).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-                for (i, line) in lines.enumerated() where line.contains(f.anchor) {
-                    let start = min(lines.count, i + f.offset)
-                    let end = min(lines.count, start + f.count)
-                    let snippet = Array(lines[start..<end])
-                    out.append((fileURL, snippet))
+                let content = try String(contentsOf: fileURL, encoding: .utf8)
+
+                let allLines = content
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map(String.init)
+
+                for (idx, line) in allLines.enumerated() where line.contains(f.anchor) {
+                    let start = max(0, idx + f.offset)
+                    let end   = min(allLines.count, start + f.count)
+                    let snippetLines = Array(allLines[start..<end])
+                    out.append(FilteredSnippet(file: fileURL, lines: snippetLines))
                 }
             }
         }
