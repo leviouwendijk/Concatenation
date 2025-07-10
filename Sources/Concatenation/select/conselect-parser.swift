@@ -40,27 +40,32 @@ public struct Conselect {
             }
         }
 
-        for dir in directories {
-            let full = (root as NSString).appendingPathComponent(dir)
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: full, isDirectory: &isDir),
-                  isDir.boolValue
-            else {
-                print("Warning: ‘\(full)’ is not a directory, skipping")
-                continue
-            }
-            let scanner = try FileScanner(
-                concatRoot: full,
-                maxDepth: maxDepth,
-                includePatterns: ["*"],
-                excludeFilePatterns: [],
-                excludeDirPatterns: [],
-                includeDotfiles: includeDotfiles,
-                ignoreMap: ignoreMap
-            )
-            for url in try scanner.scan() {
-                guard seen.insert(url).inserted else { continue }
-                results.append(url)
+        for dirName in directories {
+            let fileManager = FileManager.default
+            let keys: [URLResourceKey] = [.isDirectoryKey]
+            let walker = fileManager.enumerator(
+                at: URL(fileURLWithPath: root),
+                includingPropertiesForKeys: keys,
+                options: [.skipsHiddenFiles],
+                errorHandler: nil
+            )!
+            for case let url as URL in walker {
+                let vals = try url.resourceValues(forKeys: Set(keys))
+                guard vals.isDirectory == true else { continue }
+                guard url.lastPathComponent == dirName else { continue }
+                let scanner = try FileScanner(
+                    concatRoot: url.path,
+                    maxDepth: maxDepth,
+                    includePatterns: ["*"],
+                    excludeFilePatterns: [],
+                    excludeDirPatterns: [],
+                    includeDotfiles: includeDotfiles,
+                    ignoreMap: ignoreMap
+                )
+                for fileURL in try scanner.scan() {
+                    guard seen.insert(fileURL).inserted else { continue }
+                    results.append(fileURL)
+                }
             }
         }
 
