@@ -35,10 +35,8 @@ public struct Conselect {
                 includeEmpty: false,
                 ignoreMap: ignoreMap
             )
-            for url in try fs.scan() {
-                if seen.insert(url).inserted {
-                    results.append(url)
-                }
+            for url in try fs.scan() where seen.insert(url).inserted {
+                results.append(url)
             }
         }
 
@@ -49,34 +47,32 @@ public struct Conselect {
             includeEmpty: false,
             ignoreMap: ignoreMap
         )
-        let all = try walker.walk()
-        for url in all {
-            if url.hasDirectoryPath {
-                if directories.contains(url.lastPathComponent) {
-                    let sub = try FileScanner(
-                        root: url.path,
-                        maxDepth: maxDepth,
-                        includePatterns: ["*"],
-                        excludeFilePatterns: [],
-                        excludeDirPatterns: [],
-                        includeDotfiles: includeDotfiles,
-                        includeEmpty: false,
-                        ignoreMap: ignoreMap
-                    ).scan()
-                    for f in sub where seen.insert(f).inserted {
-                        results.append(f)
-                    }
+        for dirName in directories {
+            for dirURL in try walker.findDirectories(named: dirName) {
+                let subFS = try FileScanner(
+                    root: dirURL.path,
+                    maxDepth: maxDepth,
+                    includePatterns: ["*"],
+                    excludeFilePatterns: [],
+                    excludeDirPatterns: [],
+                    includeDotfiles: includeDotfiles,
+                    includeEmpty: false,
+                    ignoreMap: ignoreMap
+                )
+                for f in try subFS.scan() where seen.insert(f).inserted {
+                    results.append(f)
                 }
             }
         }
 
-        for fileName in files {
+        let all = try walker.walk()
+        for target in files {
             for url in all {
-                if !url.hasDirectoryPath && url.lastPathComponent == fileName {
-                    if seen.insert(url).inserted {
-                        results.append(url)
-                    }
-                }
+                guard !url.hasDirectoryPath,
+                      url.lastPathComponent == target,
+                      seen.insert(url).inserted
+                else { continue }
+                results.append(url)
             }
         }
 
