@@ -22,78 +22,64 @@ public struct Conselect {
         ignoreMap: IgnoreMap? = nil
     ) throws -> [URL] {
         var results = [URL]()
-        var seen = Set<URL>()
+        var seen    = Set<URL>()
 
         if !patterns.isEmpty {
-            let scanner = try FileScanner(
-                concatRoot: root,
+            let fs = try FileScanner(
+                root: root,
                 maxDepth: maxDepth,
                 includePatterns: patterns,
                 excludeFilePatterns: [],
                 excludeDirPatterns: [],
                 includeDotfiles: includeDotfiles,
+                includeEmpty: false,
                 ignoreMap: ignoreMap
             )
-            for url in try scanner.scan() {
-                guard seen.insert(url).inserted else { continue }
-                results.append(url)
-            }
-        }
-
-        for dirName in directories {
-            let fm = FileManager.default
-            var isDir: ObjCBool = false
-
-            guard fm.fileExists(atPath: root, isDirectory: &isDir),
-                  isDir.boolValue
-            else { continue }
-
-            let rootURL = URL(fileURLWithPath: root)
-            let keys: [URLResourceKey] = [.isDirectoryKey]
-            let walker = fm.enumerator(
-                at: rootURL,
-                includingPropertiesForKeys: keys,
-                options: [.skipsHiddenFiles],
-                errorHandler: { (url, _) in
-                    return true
-                }
-            )!
-
-            for case let dirURL as URL in walker {
-                let vals = try dirURL.resourceValues(forKeys: Set(keys))
-                guard vals.isDirectory == true else { continue }
-                guard dirURL.lastPathComponent == dirName else { continue }
-
-                let scanner = try FileScanner(
-                    concatRoot: dirURL.path,
-                    maxDepth: maxDepth,
-                    includePatterns: ["*"],
-                    excludeFilePatterns: [],
-                    excludeDirPatterns: [],
-                    includeDotfiles: includeDotfiles,
-                    ignoreMap: ignoreMap
-                )
-
-                for fileURL in try scanner.scan() {
-                    guard seen.insert(fileURL).inserted else { continue }
-                    results.append(fileURL)
-                }
-            }
-        }
-
-        for file in files {
-            let path = (root as NSString).appendingPathComponent(file)
-            if FileManager.default.fileExists(atPath: path) {
-                let url = URL(fileURLWithPath: path)
+            for url in try fs.scan() {
                 if seen.insert(url).inserted {
                     results.append(url)
                 }
-            } else {
-                print("Warning: file ‘\(path)’ not found, skipping")
             }
         }
 
-        // sorted & unique
+        let walker = PathWalker(
+            root: root,
+            maxDepth: maxDepth,
+            includeDotfiles: includeDotfiles,
+            includeEmpty: false,
+            ignoreMap: ignoreMap
+        )
+        let all = try walker.walk()
+        for url in all {
+            if url.hasDirectoryPath {
+                if directories.contains(url.lastPathComponent) {
+                    let sub = try FileScanner(
+                        root: url.path,
+                        maxDepth: maxDepth,
+                        includePatterns: ["*"],
+                        excludeFilePatterns: [],
+                        excludeDirPatterns: [],
+                        includeDotfiles: includeDotfiles,
+                        includeEmpty: false,
+                        ignoreMap: ignoreMap
+                    ).scan()
+                    for f in sub where seen.insert(f).inserted {
+                        results.append(f)
+                    }
+                }
+            }
+        }
+
+        for fileName in files {
+            for url in all {
+                if !url.hasDirectoryPath && url.lastPathComponent == fileName {
+                    if seen.insert(url).inserted {
+                        results.append(url)
+                    }
+                }
+            }
+        }
+
         return results.sorted { $0.path < $1.path }
     }
 }
