@@ -8,7 +8,7 @@ public struct ConfigureInitializer {
     private let path: URL
 
     public init(at directory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)) {
-        self.path = directory.appendingPathComponent(".con-figure")
+        self.path = directory.appendingPathComponent(".configure")
     }
 
     public func initialize(force: Bool = false) throws {
@@ -18,7 +18,7 @@ public struct ConfigureInitializer {
             throw ConfigureError.alreadyExists
         }
         let template = """
-        # .con-figure — define which snippets to extract
+        # .configure — define which snippets to extract
         [Filters]
         # pattern = anchor [+offset][:count]
         # e.g.:
