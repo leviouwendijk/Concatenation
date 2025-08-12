@@ -1,18 +1,22 @@
 import Foundation
 
-public struct ConAnyConfig {
-    public let output: String?      // as written in file; can be relative to .conany dir
+public struct ConAnyRenderableObject {
+    public let output: String?
     public let include: [String]
     public let exclude: [String]
 }
 
+public struct ConAnyConfig {
+    public let renderables: [ConAnyRenderableObject]
+}
+
 public enum ConAnyParseError: Error, LocalizedError {
-    case missingRender
+    case noneFound
     case malformed(String)
 
     public var errorDescription: String? {
         switch self {
-        case .missingRender: return "No render(...) block found."
+        case .noneFound: return "No render(...) blocks found."
         case .malformed(let m): return "Malformed .conany: \(m)"
         }
     }
@@ -25,57 +29,57 @@ public enum ConAnyParser {
     }
 
     public static func parse(_ text: String) throws -> ConAnyConfig {
-        // Strip comments
+        // strip comments
         let lines = text
             .replacingOccurrences(of: "\r\n", with: "\n")
             .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { line -> String in
-                let s = String(line)
-                if let hash = s.firstIndex(of: "#") {
-                    return String(s[..<hash]).trimmingCharacters(in: .whitespaces)
-                }
-                return s.trimmingCharacters(in: .whitespaces)
+            .map { s -> String in
+                let line = String(s)
+                if let i = line.firstIndex(of: "#") { return String(line[..<i]).trimmingCharacters(in: .whitespaces) }
+                return line.trimmingCharacters(in: .whitespaces)
             }
 
-        // Join back to simplify bracket scanning
         let joined = lines.joined(separator: "\n")
+        let renderRe = try NSRegularExpression(pattern: #"render\s*\(\s*([^\)\n]+?)\s*\)\s*\{"#, options: [])
 
-        // Find `render(<out>) { ... }`
-        let renderRegex = try NSRegularExpression(pattern: #"render\s*\(\s*([^\)\n]+?)\s*\)\s*\{"#, options: [])
-        guard let m = renderRegex.firstMatch(in: joined, options: [], range: NSRange(joined.startIndex..., in: joined)) else {
-            throw ConAnyParseError.missingRender
-        }
-        let outRange = Range(m.range(at: 1), in: joined)!
-        let outputToken = joined[outRange].trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        let matches = renderRe.matches(in: joined, options: [], range: NSRange(joined.startIndex..., in: joined))
+        guard !matches.isEmpty else { throw ConAnyParseError.noneFound }
 
-        // Extract block body (from the '{' we matched to its corresponding '}')
-        let openIdx = Range(m.range, in: joined)!.upperBound
-        guard let body = sliceBlockBody(from: joined, at: openIdx) else {
-            throw ConAnyParseError.malformed("Unclosed render { } block.")
-        }
+        var renderables: [ConAnyRenderableObject] = []
 
-        func parseList(_ keyword: String) throws -> [String] {
-            let re = try NSRegularExpression(pattern: "\(keyword)\\s*\\[([\\s\\S]*?)\\]", options: [])
-            guard let mm = re.firstMatch(in: body, options: [], range: NSRange(body.startIndex..., in: body)) else {
-                return []
+        for m in matches {
+            let outRange = Range(m.range(at: 1), in: joined)!
+            let outputToken = joined[outRange].trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+
+            let openIdx = Range(m.range, in: joined)!.upperBound
+            guard let body = sliceBlockBody(from: joined, at: openIdx) else {
+                throw ConAnyParseError.malformed("Unclosed render { } block.")
             }
-            let r = Range(mm.range(at: 1), in: body)!
-            let payload = body[r]
-            // Split by commas/newlines, keep non-empty
-            return payload
-                .split { $0 == "," || $0.isNewline }
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) }
-                .filter { !$0.isEmpty }
+
+            let include = try parseList("include", in: body)
+            let exclude = try parseList("exclude", in: body)
+
+            renderables.append(.init(output: outputToken.isEmpty ? nil : outputToken,
+                                     include: include,
+                                     exclude: exclude))
         }
 
-        let include = try parseList("include")
-        let exclude = try parseList("exclude")
+        return ConAnyConfig(renderables: renderables)
+    }
 
-        return ConAnyConfig(output: outputToken.isEmpty ? nil : outputToken,
-                            include: include,
-                            exclude: exclude)
+    private static func parseList(_ keyword: String, in body: String) throws -> [String] {
+        let re = try NSRegularExpression(pattern: "\(keyword)\\s*\\[([\\s\\S]*?)\\]", options: [])
+        guard let mm = re.firstMatch(in: body, options: [], range: NSRange(body.startIndex..., in: body)) else {
+            return []
+        }
+        let r = Range(mm.range(at: 1), in: body)!
+        let payload = body[r]
+        return payload
+            .split { $0 == "," || $0.isNewline }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) }
+            .filter { !$0.isEmpty }
     }
 
     private static func sliceBlockBody(from text: String, at openBraceIndex: String.Index) -> String? {
@@ -84,11 +88,14 @@ public enum ConAnyParser {
         while i < text.endIndex {
             let ch = text[i]
             if ch == "{" { depth += 1 }
-            if ch == "}" { depth -= 1; if depth == 0 {
-                let start = openBraceIndex
-                let end = text.index(before: i) // content without closing brace
-                return String(text[start...end])
-            }}
+            if ch == "}" {
+                depth -= 1
+                if depth == 0 {
+                    let start = openBraceIndex
+                    let end = text.index(before: i)
+                    return String(text[start...end])
+                }
+            }
             i = text.index(after: i)
         }
         return nil
