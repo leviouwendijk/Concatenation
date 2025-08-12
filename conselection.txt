@@ -1,0 +1,1460 @@
++-------------------------------------------+
+| Sources/Concatenation/Concatenation.swift |
++-------------------------------------------+
+// The Swift Programming Language
+// https://docs.swift.org/swift-book
+
+(!): 1 blank lines
+
+
++--------------------------------------------+
+| Sources/Concatenation/Resources/con-rs.txt |
++--------------------------------------------+
+(!): 1 blank lines
+
+
++---------------------------------------------+
+| Sources/Concatenation/any/conany-init.swift |
++---------------------------------------------+
+(!): 1 blank lines
+
+
++-----------------------------------------------+
+| Sources/Concatenation/any/conany-parser.swift |
++-----------------------------------------------+
+(!): 1 blank lines
+
+
++----------------------------------------+
+| Sources/Concatenation/any/conany.swift |
++----------------------------------------+
+(!): 1 blank lines
+
+
++---------------------------------------+
+| Sources/Concatenation/con-error.swift |
++---------------------------------------+
+import Foundation
+
+public enum ConcatError: Error {
+    case fileNotReadable(url: URL)
+    case pathResolutionFailed(url: URL)
+    case patternCompilationFailed(pattern: String, underlying: Error)
+    case ignoreMapLoadFailed(url: URL, underlying: Error)
+}
+
+(!): 1 blank lines
+
+
++------------------------------------------------------+
+| Sources/Concatenation/concatenate/concatenator.swift |
++------------------------------------------------------+
+import Foundation
+import plate
+
+public struct FileConcatenator {
+    public let inputFiles: [URL]
+    public let outputURL: URL
+
+    public let delimiterStyle: DelimiterStyle
+    public let delimiterClosure: Bool          
+    public let maxLinesPerFile: Int?           
+    public let trimBlankLines: Bool
+    public let relativePaths: Bool
+    public let rawOutput: Bool
+
+    public let obscureMap: [String:String]     
+    public let copyToClipboard: Bool
+    public let verbose: Bool
+
+    public init(
+        inputFiles: [URL],
+        outputURL: URL,
+        delimiterStyle: DelimiterStyle = .boxed,
+        delimiterClosure: Bool = false,
+        maxLinesPerFile: Int?     = 5000,
+        trimBlankLines: Bool = true,
+        relativePaths: Bool = true,
+        rawOutput: Bool = false,
+        obscureMap: [String:String] = [:],
+        copyToClipboard: Bool = false,
+        verbose: Bool = false
+    ) {
+        self.inputFiles = inputFiles
+        self.outputURL = outputURL
+        self.delimiterStyle = delimiterStyle
+        self.delimiterClosure = delimiterClosure
+        self.maxLinesPerFile = maxLinesPerFile
+        self.trimBlankLines = trimBlankLines
+        self.relativePaths = relativePaths
+        self.rawOutput = rawOutput
+        self.obscureMap = obscureMap
+        self.copyToClipboard = copyToClipboard
+        self.verbose = verbose
+    }
+
+    public func run() throws -> Int {
+        let fm = FileManager.default
+        fm.createFile(atPath: outputURL.path, contents: nil, attributes: nil)
+        let handle = try FileHandle(forWritingTo: outputURL)
+
+        defer { handle.closeFile() }
+
+        if verbose {
+            print("Concatenating \(inputFiles.count) files → \(outputURL.path)")
+        }
+
+        var totalLines = 0
+        var errors: [Error] = []
+
+        for fileURL in inputFiles {
+            do {
+                let resolved = try resolveSymlink(at: fileURL)
+                var lines = try readLines(from: resolved)
+
+                let (processedLines, blankWarnings) = processBlankLines(lines, trim: trimBlankLines)
+                lines = processedLines
+
+                var content = lines.joined(separator: "\n")
+                for (value, method) in obscureMap {
+                    content = content.replacingOccurrences(of: value, with: obscureValue(value, method: method))
+                }
+
+                if !rawOutput {
+                    let path = relativePaths
+                        ? resolved.path.replacingOccurrences(of: fm.currentDirectoryPath + "/", with: "")
+                        : resolved.path
+                    let hdr = delimiterStyle.header(for: path) + "\n"
+                    handle.write(Data(hdr.utf8))
+                    handle.write(Data(blankWarnings.header.utf8))
+                }
+
+                let writeLines = maxLinesPerFile.map { Array(lines.prefix($0)) } ?? lines
+                for line in writeLines {
+                    handle.write(Data((line + "\n").utf8))
+                }
+                totalLines += writeLines.count
+
+                if !rawOutput {
+                    let path = relativePaths
+                        ? resolved.path.replacingOccurrences(of: fm.currentDirectoryPath + "/", with: "")
+                        : resolved.path
+                    handle.write(Data(blankWarnings.footer.utf8))
+                    if delimiterClosure {
+                        handle.write(Data((delimiterStyle.footer(for: path) + "\n").utf8))
+                    }
+                }
+
+                if fileURL != inputFiles.last {
+                    handle.write(Data("\n\n".utf8))
+                }
+            } catch {
+                errors.append(error)
+            }
+        }
+
+        if !errors.isEmpty {
+            throw MultiError(errors)
+        }
+
+        if copyToClipboard, let full = try? String(contentsOf: outputURL) {
+            full.clipboard()
+            if verbose {
+                print("Copied output to clipboard")
+            }
+        }
+
+        if verbose {
+            print("Done: \(totalLines) lines written")
+        }
+        return totalLines
+    }
+}
+
+(!): 1 blank lines
+
+
++---------------------------------------------------+
+| Sources/Concatenation/concatenate/delimiter.swift |
++---------------------------------------------------+
+import Foundation
+import plate
+
+public enum DelimiterStyle: String, CaseIterable {
+    case none
+    case comment
+    case asterisk
+    case classic
+    case boxed
+
+    func header(for path: String) -> String {
+        switch self {
+        case .none:
+            return ""
+        case .comment:
+            return "# \(path)"
+        case .asterisk:
+            return "* \(path)"
+        case .classic:
+            return "=== Contents of \(path) ==="
+        case .boxed:
+            return createBox(for: path)
+        }
+    }
+
+    func footer(for path: String) -> String {
+        switch self {
+        case .none:
+            return ""
+        case .comment, .asterisk:
+            return ""
+        case .classic:
+            return "=== End of \(path) ==="
+        case .boxed:
+            return createBox(for: "END \(path)")
+        }
+    }
+}
+
+(!): 2 blank lines
+
+
++--------------------------------------------------------------+
+| Sources/Concatenation/concatenate/snippet-concatenator.swift |
++--------------------------------------------------------------+
+import Foundation
+import plate
+
+public struct SnippetConcatenator {
+    public let snippets: [FilteredSnippet]
+    public let outputURL: URL
+    public let delimiterStyle: DelimiterStyle
+    public let delimiterClosure: Bool
+    public let copyToClipboard: Bool
+    public let verbose: Bool
+
+    public init(
+        snippets: [FilteredSnippet],
+        outputURL: URL,
+        delimiterStyle: DelimiterStyle = .boxed,
+        delimiterClosure: Bool = false,
+        copyToClipboard: Bool = false,
+        verbose: Bool = false
+    ) {
+        self.snippets = snippets
+        self.outputURL = outputURL
+        self.delimiterStyle = delimiterStyle
+        self.delimiterClosure = delimiterClosure
+        self.copyToClipboard = copyToClipboard
+        self.verbose = verbose
+    }
+
+    public func run() throws -> Int {
+        let fm = FileManager.default
+        fm.createFile(atPath: outputURL.path, contents: nil, attributes: nil)
+        let handle = try FileHandle(forWritingTo: outputURL)
+        defer { handle.closeFile() }
+
+        if verbose {
+            print("Concatenating \(snippets.count) snippets → \(outputURL.path)")
+        }
+
+        var total = 0
+        for (i, snippet) in snippets.enumerated() {
+            let header = delimiterStyle.header(for: snippet.file.path)
+            if !header.isEmpty {
+                handle.write(Data((header + "\n").utf8))
+            }
+            for line in snippet.lines {
+                handle.write(Data((line + "\n").utf8))
+                total += 1
+            }
+            if delimiterClosure {
+                let footer = delimiterStyle.footer(for: snippet.file.path)
+                handle.write(Data((footer + "\n").utf8))
+            }
+            if i < snippets.count - 1 {
+                handle.write(Data("\n\n".utf8))
+            }
+        }
+
+        if copyToClipboard, let out = try? String(contentsOf: outputURL) {
+            out.clipboard()
+        }
+
+        if verbose {
+            print("Done: \(total) lines written")
+        }
+        return total
+    }
+}
+
+(!): 1 blank lines
+
+
++---------------------------------------------------+
+| Sources/Concatenation/figure/configure-init.swift |
++---------------------------------------------------+
+import Foundation
+
+public enum ConfigureError: Error {
+    case alreadyExists
+}
+
+public struct ConfigureInitializer {
+    private let path: URL
+
+    public init(at directory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)) {
+        self.path = directory.appendingPathComponent(".configure")
+    }
+
+    public func initialize(force: Bool = false) throws {
+        let fm = FileManager.default
+        let exists = fm.fileExists(atPath: path.path)
+        if exists && !force {
+            throw ConfigureError.alreadyExists
+        }
+        let template = """
+        # .configure — define which snippets to extract
+        [Filters]
+        # pattern = anchor [+offset][:count]
+        # e.g.:
+        # Sources/**/*.swift = TODO:+0:5
+        """
+        try template.write(to: path, atomically: true, encoding: .utf8)
+    }
+}
+
+(!): 1 blank lines
+
+
++-----------------------------------------------------+
+| Sources/Concatenation/figure/configure-parser.swift |
++-----------------------------------------------------+
+import Foundation
+
+public enum Glob {
+    public static func match(_ pattern: String, _ path: String) -> Bool {
+        let esc = NSRegularExpression.escapedPattern(for: pattern)
+            .replacingOccurrences(of: "\\*", with: ".*")
+            let re = try! NSRegularExpression(
+                pattern: "^\(esc)$",
+                options: []
+            )
+            let range = NSRange(path.startIndex..<path.endIndex, in: path)
+            return re.firstMatch(in: path, options: [], range: range) != nil
+    }
+}
+
+public struct ConfigureParser {
+    public struct Filter {
+        public let glob: String
+        public let anchor: String
+        public let offset: Int
+        public let count: Int
+    }
+
+    public static func parse(_ content: String) -> [Filter] {
+        var filters = [Filter]()
+        var inSection = false
+
+        for raw in content.split(separator: "\n").map(String.init) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty, !line.hasPrefix("#") else { continue }
+
+            if line == "[Filters]" {
+                inSection = true
+                continue
+            }
+            guard inSection, let eq = line.firstIndex(of: "=") else { continue }
+
+            let left = line[..<eq].trimmingCharacters(in: .whitespaces)
+            let right = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+
+            let parts = right.split(separator: " ", maxSplits: 1).map(String.init)
+            let anchor = parts[0]
+            var offset = 0, count = 1
+            if parts.count > 1 {
+                let rest = parts[1]
+                let offCount = rest
+                .split(separator: ":", maxSplits: 1)
+                .map(String.init)
+                if offCount[0].hasPrefix("+"), let o = Int(offCount[0].dropFirst()) {
+                    offset = o
+                }
+                if offCount.count>1, let c = Int(offCount[1]) {
+                    count = c
+                }
+            }
+
+            filters.append(.init(glob: left, anchor: anchor, offset: offset, count: count))
+        }
+
+        return filters
+    }
+
+    public static func parseFile(at url: URL) throws -> [Filter] {
+        let txt = try String(contentsOf: url)
+            return parse(txt)
+    }
+}
+
+(!): 1 blank lines
+
+
++-------------------------------------------------------+
+| Sources/Concatenation/figure/configure-resolver.swift |
++-------------------------------------------------------+
+import Foundation
+
+public struct FilteredSnippet {
+    public let file: URL
+    public let lines: [String]
+}
+
+public struct ConfigureResolver {
+    private let root: String
+    private let maxDepth: Int?
+    private let includeDotfiles: Bool
+    private let ignoreMap: IgnoreMap?
+
+    public init(
+        root: String,
+        maxDepth: Int? = nil,
+        includeDotfiles: Bool = false,
+        ignoreMap: IgnoreMap? = nil
+    ) {
+        self.root = root
+        self.maxDepth = maxDepth
+        self.includeDotfiles = includeDotfiles
+        self.ignoreMap = ignoreMap
+    }
+
+    public func resolve(filters: [ConfigureParser.Filter]) throws -> [FilteredSnippet] {
+        var out = [FilteredSnippet]()
+        for f in filters {
+            let scanner = try FileScanner(
+                root: root,
+                maxDepth: maxDepth,
+                includePatterns: [f.glob],
+                excludeFilePatterns: [],
+                excludeDirPatterns: [],
+                includeDotfiles: includeDotfiles,
+                includeEmpty: false,
+                ignoreMap: ignoreMap
+            )
+            let matches = try scanner.scan()
+            for fileURL in matches {
+                let content = try String(contentsOf: fileURL, encoding: .utf8)
+
+                let allLines = content
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map(String.init)
+
+                for (idx, line) in allLines.enumerated() where line.contains(f.anchor) {
+                    let start = max(0, idx + f.offset)
+                    let end   = min(allLines.count, start + f.count)
+                    let snippetLines = Array(allLines[start..<end])
+                    out.append(FilteredSnippet(file: fileURL, lines: snippetLines))
+                }
+            }
+        }
+        return out
+    }
+}
+
+(!): 1 blank lines
+
+
++------------------------------------------+
+| Sources/Concatenation/file-scanner.swift |
++------------------------------------------+
+import Foundation
+import plate
+
+public struct FileScanner {
+    private let rootURL: URL
+    private let maxDepth: Int?
+    private let includeRegexes: [NSRegularExpression]
+    private let excludeFileRegexes: [NSRegularExpression]
+    private let excludeDirRegexes:  [NSRegularExpression]
+    private let includeDotfiles: Bool
+    private let includeEmpty: Bool
+    private let ignoreMap: IgnoreMap?
+    private let walker: PathWalker
+
+    public init(
+        root: String,
+        maxDepth: Int? = nil,
+        includePatterns: [String] = ["*"],
+        excludeFilePatterns: [String],
+        excludeDirPatterns: [String] = [],
+        includeDotfiles: Bool = false,
+        includeEmpty: Bool = false,
+        ignoreMap: IgnoreMap? = nil,
+        ignoreStaticDefaults: Bool = true
+    ) throws {
+        let staticIgnore = StaticIgnoreDefaults.allPatterns
+        let finalExcludeFilePatterns = ignoreStaticDefaults ? (staticIgnore + excludeFilePatterns) : excludeFilePatterns
+        self.rootURL            = normalize(path: root)
+        self.maxDepth           = maxDepth
+        self.includeRegexes     = try compilePatterns(includePatterns)
+        self.excludeFileRegexes = try compilePatterns(finalExcludeFilePatterns)
+        self.excludeDirRegexes  = try compilePatterns(excludeDirPatterns)
+        self.includeDotfiles    = includeDotfiles
+        self.includeEmpty       = includeEmpty
+        self.ignoreMap          = ignoreMap
+
+        self.walker = PathWalker(
+            root: root,
+            maxDepth: maxDepth,
+            includeDotfiles: includeDotfiles,
+            includeEmpty: includeEmpty,
+            ignoreMap: ignoreMap
+        )
+    }
+
+    public init(
+        concatRoot: String,
+        maxDepth: Int? = nil,
+        includePatterns: [String] = ["*"],
+        excludeFilePatterns: [String],
+        excludeDirPatterns: [String] = [],
+        includeDotfiles: Bool = false,
+        includeEmpty: Bool = false,
+        ignoreMap: IgnoreMap? = nil,
+        ignoreStaticDefaults: Bool = true
+    ) throws {
+        try self.init(
+            root: concatRoot,
+            maxDepth: maxDepth,
+            includePatterns: includePatterns,
+            excludeFilePatterns: excludeFilePatterns,
+            excludeDirPatterns: excludeDirPatterns,
+            includeDotfiles: includeDotfiles,
+            includeEmpty: false,
+            ignoreMap: ignoreMap,
+            ignoreStaticDefaults: ignoreStaticDefaults
+        )
+    }
+
+    public init(
+        treeRoot: String,
+        maxDepth: Int? = nil,
+        includePatterns: [String] = ["*"],
+        excludeFilePatterns: [String],
+        excludeDirPatterns: [String] = [],
+        includeDotfiles: Bool = false,
+        includeEmpty: Bool = false,
+        ignoreMap: IgnoreMap? = nil,
+        ignoreStaticDefaults: Bool = true
+    ) throws {
+        try self.init(
+            root: treeRoot,
+            maxDepth: maxDepth,
+            includePatterns: includePatterns,
+            excludeFilePatterns: excludeFilePatterns,
+            excludeDirPatterns: [],
+            includeDotfiles: includeDotfiles,
+            includeEmpty: includeEmpty,
+            ignoreMap: ignoreMap,
+            ignoreStaticDefaults: ignoreStaticDefaults
+        )
+    }
+
+    public func scan() throws -> [URL] {
+        let all = try walker.walk()
+        return all.filter { url in
+            let isDir = (try? url.resourceValues(forKeys:[.isDirectoryKey]).isDirectory) == true
+            if isDir {
+                return !matchesAny(excludeDirRegexes, url: url)
+            } else {
+                return matchesAny(includeRegexes, url: url) && !matchesAny(excludeFileRegexes, url: url)
+            }
+        }
+    }
+}
+
+(!): 1 blank lines
+
+
++------------------------------------------------------+
+| Sources/Concatenation/helpers/array-dictionary.swift |
++------------------------------------------------------+
+import Foundation
+
+extension Array where Element: Hashable {
+    public func removingDuplicates() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
+    }
+}
+
+extension Dictionary {
+    public func merging(_ other: Dictionary, uniquingKeysWith combine: (Value,Value)->Value) -> Dictionary {
+        var copy = self
+        other.forEach { copy[$0] = combine(copy[$0] ?? $1, $1) }
+        return copy
+    }
+}
+
+(!): 1 blank lines
+
+
++------------------------------------------+
+| Sources/Concatenation/helpers/file.swift |
++------------------------------------------+
+import Foundation
+import plate
+
+public func compilePatterns(_ globs: [String]) throws -> [NSRegularExpression] {
+    return try globs.map { glob in
+        let escaped = NSRegularExpression.escapedPattern(for: glob)
+            .replacingOccurrences(of: "\\*", with: ".*")
+            .replacingOccurrences(of: "\\?", with: ".")
+        let pattern = "^\(escaped)$"
+        do {
+            return try NSRegularExpression(pattern: pattern, options: [])
+        } catch {
+            throw ConcatError.patternCompilationFailed(pattern: glob, underlying: error)
+        }
+    }
+}
+
+public func matchesAny(_ regexes: [NSRegularExpression], url: URL) -> Bool {
+    let path = url.path
+    return regexes.contains { regex in
+        regex.firstMatch(in: path, options: [], range: NSRange(path.startIndex..<path.endIndex, in: path)) != nil
+    }
+}
+
+public func loadIgnoreMap(from url: URL) throws -> IgnoreMap {
+    do {
+        let raw = try String(contentsOf: url, encoding: .utf8)
+        return try ConignoreParser.parse(raw)
+    } catch let error {
+        throw ConcatError.ignoreMapLoadFailed(url: url, underlying: error)
+    }
+}
+
+public func shouldIgnore(_ url: URL, using map: IgnoreMap) -> Bool {
+    return map.shouldIgnore(url)
+}
+
+(!): 1 blank lines
+
+
++-------------------------------------------+
+| Sources/Concatenation/helpers/guide.swift |
++-------------------------------------------+
+import Foundation
+
+public func conignoreGuide() -> String {
+    return """
+    .conignore Configuration Guide
+    ---------------------------------
+    The .conignore file allows you to configure files, directories, and values to exclude or obscure during processing. 
+    Below is a breakdown of how to use and structure the .conignore file.
+
+    [IgnoreFiles]
+    - Use patterns to exclude specific files. Patterns support wildcards (*, ?).
+    - Examples:
+        *.env       - Matches all `.env` files.
+        *.log       - Matches all `.log` files.
+        config.json - Matches a specific file named `config.json`.
+
+    [IgnoreDirectories]
+    - Use patterns to exclude specific directories. Patterns also support wildcards (*, ?).
+    - Examples:
+        env/        - Matches the `env/` directory.
+        build/      - Matches the `build/` directory.
+        */backups/  - Matches any `backups/` directory at any level.
+
+    [Obscure]
+    - Use this section to obscure sensitive values in the processed files. Specify the value and method of obscuration.
+    - Methods:
+        redact   - Replaces the value with `[REDACTED]`.
+        preserve - Replaces numeric and alphabetic characters with zeros and letters.
+        verbose  - Replaces the value with a type identifier like `[INT]` or `[STRING]`.
+    - Examples:
+        password : redact   - Replaces occurrences of "password" with `[REDACTED]`.
+        12345 : preserve    - Replaces "12345" with "00000".
+        apiKey : verbose    - Replaces "apiKey" with `[STRING]`.
+
+    Additional Notes:
+    - Comments: Lines beginning with `#` are ignored.
+    - Wildcards:
+        *  - Matches any number of characters (e.g., `*.log` matches `error.log` or `app.log`).
+        ?  - Matches a single character (e.g., `file?.txt` matches `file1.txt` but not `file12.txt`).
+    - Directory patterns must end with a `/` to ensure they match directories specifically.
+
+    Example .conignore File:
+    ---------------------------------
+    [IgnoreFiles]
+    *.env
+    *.log
+    secrets.txt
+
+    [IgnoreDirectories]
+    env/
+    build/
+    */backups/
+
+    [Obscure]
+    password : redact
+    apiKey : verbose
+    """
+
+}
+
+public func printConignoreGuide() {
+    print(
+        conignoreGuide()
+    )
+}
+
+(!): 1 blank lines
+
+
++---------------------------------------------+
+| Sources/Concatenation/helpers/obscure.swift |
++---------------------------------------------+
+import Foundation
+
+public func obscureValue(_ value: String, method: String) -> String {
+    switch method.lowercased() {
+    case "preserve":
+        return String(value.map { $0.isNumber ? "0" : $0.isLetter ? "a" : $0 })
+    case "verbose":
+        if value.allSatisfy(\.isNumber) { return "[INT]" }
+        if value.allSatisfy(\.isLetter) { return "[STRING]" }
+        return "[OBSCURED]"
+    case "redact":
+        fallthrough
+    default:
+        return "[REDACTED]"
+    }
+}
+
+(!): 2 blank lines
+
+
++------------------------------------------+
+| Sources/Concatenation/helpers/path.swift |
++------------------------------------------+
+import Foundation
+import plate
+
+public func normalize(path: String) -> URL {
+    return URL(fileURLWithPath: path)
+    .standardizedFileURL
+}
+
+public func resolveSymlink(at url: URL) throws -> URL {
+    let standardized = url.standardizedFileURL
+    let resourceValues = try standardized.resourceValues(forKeys: [.isSymbolicLinkKey])
+    if resourceValues.isSymbolicLink == true {
+        do {
+            let destPath = try FileManager.default.destinationOfSymbolicLink(atPath: standardized.path)
+            let destURL = URL(fileURLWithPath: destPath, relativeTo: standardized.deletingLastPathComponent())
+            return destURL.standardizedFileURL
+        } catch {
+            throw ConcatError.pathResolutionFailed(url: url)
+        }
+    }
+    return standardized
+}
+
+(!): 1 blank lines
+
+
++------------------------------------------+
+| Sources/Concatenation/helpers/read.swift |
++------------------------------------------+
+import Foundation
+
+public func readLines(from url: URL) throws -> [String] {
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    return raw.components(separatedBy: .newlines)
+}
+
+public func processBlankLines(_ lines: [String], trim: Bool) -> ([String], (header: String, footer: String)) {
+    guard trim else {
+        return (lines, ("", ""))
+    }
+    let arr = lines
+    var lead = 0, trail = 0
+
+    while lead < arr.count, arr[lead].trimmingCharacters(in: .whitespaces).isEmpty {
+        lead += 1
+    }
+    while trail < arr.count - lead,
+          arr[arr.count - 1 - trail].trimmingCharacters(in: .whitespaces).isEmpty {
+        trail += 1
+    }
+
+    let header = lead > 0 ? "(!): \(lead) blank lines\n" : ""
+    let footer = trail > 0 ? "\n(!): \(trail) blank lines\n" : ""
+    let trimmed = Array(arr.dropFirst(lead).dropLast(trail))
+    return (trimmed, (header, footer))
+}
+
+(!): 1 blank lines
+
+
++---------------------------------------------------+
+| Sources/Concatenation/ignore/conignore-init.swift |
++---------------------------------------------------+
+import Foundation
+
+public enum ConIgnoreError: Error, Sendable {
+    case alreadyExists
+}
+
+public struct ConignoreInitializer {
+    public let path: URL
+
+    public init(
+        at directory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    ) {
+        self.path = directory.appendingPathComponent(".conignore")
+    }
+
+    public func initialize(
+        template: ConignoreTemplate = .clean,
+        force: Bool = false,
+        transfer: Bool = false
+    ) throws {
+        let fm = FileManager.default
+        let exists = fm.fileExists(atPath: path.path)
+        if exists && !force {
+            throw ConIgnoreError.alreadyExists
+        }
+
+        let existingMap: IgnoreMap? = (exists && transfer) ? try ConignoreParser.parseFile(at: path) : nil
+
+        let content = makeConignoreFileWithMergedDefaults(
+            template: template,
+            mergingWith: existingMap
+        )
+        try content.write(to: path, atomically: true, encoding: .utf8)
+    }
+
+    public func printGuide() {
+        print(conignoreGuide())
+    }
+}
+
+(!): 1 blank lines
+
+
++--------------------------------------------------+
+| Sources/Concatenation/ignore/conignore-map.swift |
++--------------------------------------------------+
+import Foundation
+
+public enum ConignoreSection {
+    case none, ignoreFiles, ignoreDirectories, obscure
+}
+
+public struct IgnoreMap {
+    public let ignoreFiles: [String]
+    public let ignoreDirectories: [String]
+    public let obscureValues: [String: String]
+
+    private let fileRegexes: [NSRegularExpression]
+    private let dirRegexes: [NSRegularExpression]
+
+    public init() {
+        self.ignoreFiles = []
+        self.ignoreDirectories = []
+        self.obscureValues = [:]
+
+        self.fileRegexes = []
+        self.dirRegexes = []
+    }
+
+    public init(
+        ignoreFiles: [String],
+        ignoreDirectories: [String],
+        obscureValues: [String: String]
+    ) throws {
+        self.ignoreFiles        = ignoreFiles
+        self.ignoreDirectories  = ignoreDirectories
+        self.obscureValues      = obscureValues
+
+        self.fileRegexes = try compilePatterns(ignoreFiles)
+        self.dirRegexes  = try compilePatterns(ignoreDirectories)
+    }
+
+    public func shouldIgnore(_ url: URL) -> Bool {
+        return matchesAny(fileRegexes, url: url) || matchesAny(dirRegexes,  url: url)
+    }
+}
+
+(!): 1 blank lines
+
+
++-----------------------------------------------------+
+| Sources/Concatenation/ignore/conignore-parser.swift |
++-----------------------------------------------------+
+import Foundation
+import plate
+
+public struct ConignoreParser {
+    private enum Section {
+        case none, ignoreFiles, ignoreDirectories, obscure
+    }
+
+    public static func parse(_ content: String) throws -> IgnoreMap {
+        var fileGlobs: [String] = []
+        var dirGlobs: [String] = []
+        var obscureMap: [String: String] = [:]
+        var section: Section = .none
+
+        for rawLine in content.split(separator: "\n") {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty, !line.hasPrefix("#") else { continue }
+
+            switch line {
+            case "[IgnoreFiles]":
+                section = .ignoreFiles
+                continue
+            case "[IgnoreDirectories]":
+                section = .ignoreDirectories
+                continue
+            case "[Obscure]":
+                section = .obscure
+                continue
+            default:
+                break
+            }
+
+            switch section {
+            case .ignoreFiles:
+                fileGlobs.append(line)
+            case .ignoreDirectories:
+                dirGlobs.append(line)
+            case .obscure:
+                let parts = line.split(separator: ":", maxSplits: 1)
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                if parts.count == 2 {
+                    obscureMap[parts[0]] = parts[1]
+                } else if parts.count == 1 {
+                    obscureMap[parts[0]] = "redact"
+                }
+            case .none:
+                continue
+            }
+        }
+
+        return try IgnoreMap(
+            ignoreFiles: fileGlobs,
+            ignoreDirectories: dirGlobs,
+            obscureValues: obscureMap
+        )
+    }
+
+    public static func parseFile(at url: URL) throws -> IgnoreMap {
+        let rawContent = try String(contentsOf: url, encoding: .utf8)
+        return try parse(rawContent)
+    }
+}
+
+(!): 1 blank lines
+
+
++------------------------------------------------+
+| Sources/Concatenation/ignore/make-ignore.swift |
++------------------------------------------------+
+import Foundation
+
+public enum ConignoreTemplate {
+    case clean
+    case comments
+}
+
+public func makeCommentSection(comments: [String]) -> String {
+    var section = ""
+    for comment in comments {
+        section += "# \(comment)\n"
+    }
+    section += "\n"
+    return section
+}
+
+public func makeIgnoreFilesSection(files: [String], comment: String? = nil) -> String {
+    var section = "[IgnoreFiles]\n"
+    if let comment = comment {
+        section += "# \(comment)\n"
+    }
+    section += files.isEmpty ? "# No files to ignore\n" : files.joined(separator: "\n")
+    section += "\n\n"
+    return section
+}
+
+public func makeIgnoreDirectoriesSection(directories: [String], comment: String? = nil) -> String {
+    var section = "[IgnoreDirectories]\n"
+    if let comment = comment {
+        section += "# \(comment)\n"
+    }
+    section += directories.isEmpty ? "# No directories to ignore\n" : directories.joined(separator: "\n")
+    section += "\n\n"
+    return section
+}
+
+public func makeObscureSection(obscurations: [String: String], comment: String? = nil) -> String {
+    var section = "[Obscure]\n"
+    if let comment = comment {
+        section += "# \(comment)\n"
+    }
+    if obscurations.isEmpty {
+        section += "# No values to obscure\n"
+    } else {
+        for (value, method) in obscurations {
+            section += "\(value) : \(method)\n"
+        }
+    }
+    section += "\n"
+    return section
+}
+
+public func makeConignoreFile(
+    topLevelComments: [String],
+    files: [String],
+    directories: [String],
+    obscurations: [String: String],
+    fileComment: String? = "List files to exclude from concatenation.",
+    dirComment: String? = "List directories to exclude from concatenation.",
+    obscureComment: String? = "Specify values to obscure and their methods."
+) -> String {
+    let commentsSection = makeCommentSection(comments: topLevelComments)
+    let filesSection = makeIgnoreFilesSection(files: files, comment: fileComment)
+    let directoriesSection = makeIgnoreDirectoriesSection(directories: directories, comment: dirComment)
+    let obscureSection = makeObscureSection(obscurations: obscurations, comment: obscureComment)
+    
+    return commentsSection + filesSection + directoriesSection + obscureSection
+}
+
+public func makeConignoreFileWithMergedDefaults(
+    template: ConignoreTemplate,
+    mergingWith existing: IgnoreMap? = nil
+) -> String {
+    let baseFiles   = ["*.env", "*.log", "*.pem", "*.pub", "*.conf", "secrets.txt"]
+    let baseDirs    = ["env/", "build/", ".build/", "*/backups/"]
+    let baseObscure = ["apiKey":"verbose"]
+
+    let (topComments, fileC, dirC, obsC): ([String], String?, String?, String?) = {
+        switch template {
+        case .clean:
+            return ([], nil, nil, nil)
+        case .comments:
+            return (
+                [ ".conignore configuration file",
+                  "Use [IgnoreFiles] and [IgnoreDirectories] to skip items,",
+                  "and [Obscure] to mask sensitive values." ],
+                "List files to exclude (one per line).",
+                "List directories to exclude (one per line).",
+                "Specify value : method (redact, preserve, verbose)."
+            )
+        }
+    }()
+
+    let mergedFiles = existing?.ignoreFiles.removingDuplicates() ?? baseFiles
+    let mergedDirs  = existing?.ignoreDirectories.removingDuplicates() ?? baseDirs
+    let mergedObs   = existing?.obscureValues.merging(baseObscure) { _, new in new } ?? baseObscure
+
+    var out = ""
+    out += makeCommentSection(comments: topComments)
+    out += makeIgnoreFilesSection(files: mergedFiles, comment: fileC)
+    out += makeIgnoreDirectoriesSection(directories: mergedDirs, comment: dirC)
+    out += makeObscureSection(obscurations: mergedObs, comment: obsC)
+    return out
+}
+
+(!): 1 blank lines
+
+
++---------------------------------------------------+
+| Sources/Concatenation/ignore/static-ignores.swift |
++---------------------------------------------------+
+import Foundation
+
+public struct StaticIgnoreDefaults {
+    public static let staticIgnore = [
+        ".conignore"
+    ]
+
+    public static let backwardsCompatible = [
+        "concatenation.txt",
+        "concatenation-filetree.txt"
+    ]
+
+    public static let newIgnore = [
+        "concatenation",
+        "tree"
+    ]
+
+    public static let allPatterns = staticIgnore + backwardsCompatible + newIgnore
+}
+
+(!): 1 blank lines
+
+
++-----------------------------------------+
+| Sources/Concatenation/path-walker.swift |
++-----------------------------------------+
+import Foundation
+import plate
+
+public struct PathWalker {
+    public let rootURL: URL
+    public let maxDepth: Int?
+    public let includeDotfiles: Bool
+    public let includeEmpty: Bool
+    public let ignoreMap: IgnoreMap?
+
+    public init(
+        root: String,
+        maxDepth: Int? = nil,
+        includeDotfiles: Bool = false,
+        includeEmpty: Bool = false,
+        ignoreMap: IgnoreMap? = nil
+    ) {
+        self.rootURL = URL(fileURLWithPath: root).standardizedFileURL
+        self.maxDepth = maxDepth
+        self.includeDotfiles = includeDotfiles
+        self.includeEmpty = includeEmpty
+        self.ignoreMap = ignoreMap
+    }
+    
+    public func walk() throws -> [URL] {
+        var results = [URL]()
+        var errors = [Error]()
+        func recurse(_ url: URL, depth: Int) {
+            do {
+                let res = try resolveSymlink(at: url)
+                if !includeDotfiles, res.lastPathComponent.hasPrefix(".") { return }
+                let isDir = (try res.resourceValues(forKeys:[.isDirectoryKey])).isDirectory == true
+                if isDir {
+                    let children = try FileManager.default.contentsOfDirectory(
+                        at: res,
+                        includingPropertiesForKeys: [.isDirectoryKey],
+                        options: includeDotfiles ? [] : [.skipsHiddenFiles]
+                    )
+                    var sawChild = false
+                    for child in children {
+                        if let m = maxDepth, depth >= m { continue }
+                        recurse(child, depth: depth + 1)
+                        sawChild = true
+                    }
+                    if includeEmpty && !sawChild {
+                        results.append(res)
+                    }
+                } else {
+                    if !(ignoreMap.map { shouldIgnore(res, using: $0) } ?? false) {
+                        results.append(res)
+                    }
+                }
+            } catch {
+                errors.append(error)
+            }
+        }
+        recurse(rootURL, depth: 0)
+        if !errors.isEmpty { throw MultiError(errors) }
+        return results
+    }
+
+    public func findDirectories(named name: String) throws -> [URL] {
+        let fm = FileManager.default
+        let keys: [URLResourceKey] = [.isDirectoryKey]
+        let enumerator = fm.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles],
+            errorHandler: { _, _ in true }
+        )!
+
+        var matches = [URL]()
+        for case let url as URL in enumerator {
+            let rv = try url.resourceValues(forKeys: Set(keys))
+            if rv.isDirectory == true, url.lastPathComponent == name {
+                matches.append(url)
+            }
+        }
+        return matches
+    }
+}
+
+(!): 1 blank lines
+
+
++---------------------------------------------------+
+| Sources/Concatenation/select/conselect-init.swift |
++---------------------------------------------------+
+import Foundation
+
+public enum ConselectError: Error {
+    case alreadyExists
+}
+
+public struct ConselectInitializer {
+    public let path: URL
+
+    public init(
+        at directory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    ) {
+        self.path = directory.appendingPathComponent(".conselect")
+    }
+
+    public func initialize(force: Bool = false) throws {
+        let fm = FileManager.default
+        let exists = fm.fileExists(atPath: path.path)
+        if exists && !force {
+            throw ConselectError.alreadyExists
+        }
+        try Self.defaultTemplate.write(
+            to: path,
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    public static let defaultTemplate = """
+    [Patterns]
+    # Add glob patterns, e.g. *.swift
+
+    [Directories]
+    # Add directories, e.g. Sources/
+
+    [Files]
+    # Add specific file paths, e.g. README.md
+    """
+}
+
+(!): 1 blank lines
+
+
++-----------------------------------------------------+
+| Sources/Concatenation/select/conselect-parser.swift |
++-----------------------------------------------------+
+import Foundation
+
+public struct ConselectParser {
+    private enum Section { case none, patterns, directories, files }
+
+    public static func parse(_ content: String) -> Conselect {
+        var patterns   = [String]()
+        var directories = [String]()
+        var files      = [String]()
+        var section: Section = .none
+
+        for raw in content.split(separator: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty, !line.hasPrefix("#") else { continue }
+
+            switch line {
+                case "[Patterns]":    section = .patterns;    continue
+                case "[Directories]": section = .directories; continue
+                case "[Files]":       section = .files;       continue
+                default: break
+            }
+
+            switch section {
+                case .patterns:    patterns.append(line)
+                case .directories: directories.append(line)
+                case .files:       files.append(line)
+                case .none:        continue
+            }
+        }
+
+        return Conselect(
+            patterns: patterns,
+            directories: directories,
+            files: files
+        )
+    }
+
+    public static func parseFile(at url: URL) throws -> Conselect {
+        let raw = try String(contentsOf: url, encoding: .utf8)
+        return parse(raw)
+    }
+}
+
+(!): 1 blank lines
+
+
++----------------------------------------------+
+| Sources/Concatenation/select/conselect.swift |
++----------------------------------------------+
+import Foundation
+
+public struct Conselect {
+    public let patterns:    [String]
+    public let directories: [String]
+    public let files:       [String]
+
+    public init(
+        patterns: [String],
+        directories: [String],
+        files: [String]
+    ) {
+        self.patterns = patterns
+        self.directories = directories
+        self.files = files
+    }
+
+    public func resolve(
+        root: String,
+        maxDepth: Int? = nil,
+        includeDotfiles: Bool = false,
+        ignoreMap: IgnoreMap? = nil,
+        verbose: Bool = false
+    ) throws -> [URL] {
+        var results = [URL]()
+        var seen    = Set<URL>()
+
+        if verbose {
+            print("Conselect resolving in “\(root)”")
+            print("   patterns: \(patterns)")
+            print("   directories: \(directories)")
+            print("   files: \(files)")
+        }
+
+        if !patterns.isEmpty {
+            let fs = try FileScanner(
+                root: root,
+                maxDepth: maxDepth,
+                includePatterns: patterns,
+                excludeFilePatterns: [],
+                excludeDirPatterns: [],
+                includeDotfiles: includeDotfiles,
+                includeEmpty: false,
+                ignoreMap: ignoreMap
+            )
+
+            if verbose { print(" • pattern scan →") }
+            for url in try fs.scan() where seen.insert(url).inserted {
+                if verbose { print("    ✓ \(url.path)") }
+                results.append(url)
+            }
+        }
+
+        let walker = PathWalker(
+            root: root,
+            maxDepth: maxDepth,
+            includeDotfiles: includeDotfiles,
+            includeEmpty: false,
+            ignoreMap: ignoreMap
+        )
+
+        let all = try walker.walk()
+        if verbose { print(" • walker.walk() found \(all.count) entries") }
+
+        for url in all where !url.hasDirectoryPath {
+            if verbose { print(" • directory‐based include") }
+
+            let relComponents = url
+            .path
+            .replacingOccurrences(of: root + "/", with: "")
+            .split(separator: "/")
+            .map(String.init)
+
+            if relComponents.contains(where: { directories.contains($0) }) && seen.insert(url).inserted {
+                if verbose { print("    ✓ in dir match: \(url.path)") }
+                results.append(url)
+            }
+        }
+        
+        if !files.isEmpty {
+            if verbose { print(" • file‐name–based include") }
+            for target in files {
+                for url in all where !url.hasDirectoryPath && url.lastPathComponent == target {
+                    guard seen.insert(url).inserted else { continue }
+                    if verbose { print("    ✓ file match: \(url.path)") }
+                    results.append(url)
+                }
+            }
+        }
+
+        return results.sorted { $0.path < $1.path }
+    }
+}
+
+(!): 2 blank lines
+
+
++---------------------------------------------+
+| Sources/Concatenation/tree/tree-maker.swift |
++---------------------------------------------+
+import Foundation
+import plate
+
+public struct FileTreeMaker {
+    private let inputPaths: [URL]
+    private let root: URL
+    private let removeTrailingSlash: Bool
+    private let copyToClipboard: Bool
+
+    public init(
+        files: [URL],
+        rootPath: String,
+        removeTrailingSlash: Bool = false,
+        copyToClipboard: Bool = false
+    ) {
+        self.inputPaths           = files
+        self.root                 = URL(fileURLWithPath: rootPath)
+        self.removeTrailingSlash  = removeTrailingSlash
+        self.copyToClipboard      = copyToClipboard
+    }
+
+    public func generate() -> String {
+        let rootStd = root.standardizedFileURL
+        let rootPrefix = rootStd.path.hasSuffix("/") ? rootStd.path : rootStd.path + "/"
+
+        let rels = inputPaths.map { url -> String in
+            let p = url.standardizedFileURL.path
+            if p.hasPrefix(rootPrefix) {
+                return String(p.dropFirst(rootPrefix.count))
+            } else {
+                // Fallback: keep absolute path if it isn't under root
+                return p
+            }
+        }.sorted()
+
+        var tree = "\(root.lastPathComponent)\(removeTrailingSlash ? "" : "/")\n"
+        var stack: [String] = []
+
+        for rel in rels {
+            let comps = rel.split(separator: "/").map(String.init)
+            guard let filename = comps.last else { continue }
+            let dirs = Array(comps.dropLast())
+
+            // 1) find length of common prefix with current stack
+            var common = 0
+            while common < min(stack.count, dirs.count) && stack[common] == dirs[common] {
+                common += 1
+            }
+
+            // 2) pop to the common prefix
+            while stack.count > common { stack.removeLast() }
+
+            // 3) push remaining dirs
+            while stack.count < dirs.count {
+                let next = dirs[stack.count]
+                stack.append(next)
+                tree += String(repeating: "    ", count: stack.count - 1)
+                     + "└── \(next)\(removeTrailingSlash ? "" : "/")\n"
+            }
+
+            // 4) print file
+            tree += String(repeating: "    ", count: stack.count)
+                 + "└── \(filename)\n"
+        }
+
+        if copyToClipboard { tree.clipboard() }
+        return tree
+    }
+}
+
+(!): 1 blank lines
