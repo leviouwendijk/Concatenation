@@ -20,34 +20,50 @@ public struct FileTreeMaker {
     }
 
     public func generate() -> String {
-        let rootName = root.lastPathComponent
-        var tree = "\(rootName)\(removeTrailingSlash ? "" : "/")\n"
+        let rootStd = root.standardizedFileURL
+        let rootPrefix = rootStd.path.hasSuffix("/") ? rootStd.path : rootStd.path + "/"
 
-        let rels = inputPaths.map { url in
-            url.path.replacingOccurrences(of: root.path + "/", with: "")
+        let rels = inputPaths.map { url -> String in
+            let p = url.standardizedFileURL.path
+            if p.hasPrefix(rootPrefix) {
+                return String(p.dropFirst(rootPrefix.count))
+            } else {
+                // Fallback: keep absolute path if it isn't under root
+                return p
+            }
         }.sorted()
 
+        var tree = "\(root.lastPathComponent)\(removeTrailingSlash ? "" : "/")\n"
         var stack: [String] = []
-            for rel in rels {
-                let comps = rel.split(separator: "/").map(String.init)
-                let filename = comps.last!
-                let dirs = comps.dropLast()
 
-                while stack.count > dirs.count { stack.removeLast() }
-                while stack.count < dirs.count {
-                    let next = dirs[stack.count]
-                    stack.append(next)
-                    tree += String(repeating: "    ", count: stack.count - 1)
-                    + "└── \(next)\(removeTrailingSlash ? "" : "/")\n"
-                }
+        for rel in rels {
+            let comps = rel.split(separator: "/").map(String.init)
+            guard let filename = comps.last else { continue }
+            let dirs = Array(comps.dropLast())
 
-                tree += String(repeating: "    ", count: stack.count)
-                + "└── \(filename)\n"
+            // 1) find length of common prefix with current stack
+            var common = 0
+            while common < min(stack.count, dirs.count) && stack[common] == dirs[common] {
+                common += 1
             }
 
-        if copyToClipboard {
-            tree.clipboard()
+            // 2) pop to the common prefix
+            while stack.count > common { stack.removeLast() }
+
+            // 3) push remaining dirs
+            while stack.count < dirs.count {
+                let next = dirs[stack.count]
+                stack.append(next)
+                tree += String(repeating: "    ", count: stack.count - 1)
+                     + "└── \(next)\(removeTrailingSlash ? "" : "/")\n"
+            }
+
+            // 4) print file
+            tree += String(repeating: "    ", count: stack.count)
+                 + "└── \(filename)\n"
         }
+
+        if copyToClipboard { tree.clipboard() }
         return tree
     }
 }

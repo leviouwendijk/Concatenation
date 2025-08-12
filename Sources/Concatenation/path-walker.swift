@@ -33,8 +33,8 @@ public struct PathWalker {
                 if isDir {
                     let children = try FileManager.default.contentsOfDirectory(
                         at: res,
-                        includingPropertiesForKeys:[.isDirectoryKey],
-                        options:[.skipsHiddenFiles]
+                        includingPropertiesForKeys: [.isDirectoryKey],
+                        options: includeDotfiles ? [] : [.skipsHiddenFiles]
                     )
                     var sawChild = false
                     for child in children {

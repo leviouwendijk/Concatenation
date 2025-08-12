@@ -119,4 +119,3 @@ public struct FileConcatenator {
         return totalLines
     }
 }
-
