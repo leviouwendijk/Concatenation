@@ -21,7 +21,7 @@ public struct FileConcatenator {
         outputURL: URL,
         delimiterStyle: DelimiterStyle = .boxed,
         delimiterClosure: Bool = false,
-        maxLinesPerFile: Int?     = 5000,
+        maxLinesPerFile: Int? = 5000,
         trimBlankLines: Bool = true,
         relativePaths: Bool = true,
         rawOutput: Bool = false,
@@ -78,10 +78,31 @@ public struct FileConcatenator {
                     handle.write(Data(blankWarnings.header.utf8))
                 }
 
-                let writeLines = maxLinesPerFile.map { Array(lines.prefix($0)) } ?? lines
+                // let writeLines = maxLinesPerFile.map { Array(lines.prefix($0)) } ?? lines
+                // for line in writeLines {
+                //     handle.write(Data((line + "\n").utf8))
+                // }
+                // totalLines += writeLines.count
+
+                let writeLines: [String]
+                let wasTruncated: Bool
+                if let limit = maxLinesPerFile, lines.count > limit {
+                    writeLines = Array(lines.prefix(limit))
+                    wasTruncated = true
+                } else {
+                    writeLines = lines
+                    wasTruncated = false
+                }
+
                 for line in writeLines {
                     handle.write(Data((line + "\n").utf8))
                 }
+
+                if wasTruncated {
+                    handle.write(Data("(!): truncated — file exceeded max line limit (\(writeLines.count)/\(lines.count) lines)\n".utf8))
+                    print("(!): truncated — file exceeded max line limit (\(writeLines.count)/\(lines.count) lines)")
+                }
+
                 totalLines += writeLines.count
 
                 if !rawOutput {
