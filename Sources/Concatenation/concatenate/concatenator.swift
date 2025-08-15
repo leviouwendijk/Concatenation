@@ -100,7 +100,7 @@ public struct FileConcatenator {
 
                 if wasTruncated {
                     handle.write(Data("(!): truncated — file exceeded max line limit (\(writeLines.count)/\(lines.count) lines)\n".utf8))
-                    print("(!): truncated — file exceeded max line limit (\(writeLines.count)/\(lines.count) lines)")
+                    print("(!): truncated — file exceeded max line limit (\(writeLines.count)/\(lines.count) lines)".ansi(.yellow))
                 }
 
                 totalLines += writeLines.count
