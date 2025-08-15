@@ -21,7 +21,7 @@ public struct FileConcatenator {
         outputURL: URL,
         delimiterStyle: DelimiterStyle = .boxed,
         delimiterClosure: Bool = false,
-        maxLinesPerFile: Int? = 5000,
+        maxLinesPerFile: Int? = 10_000,
         trimBlankLines: Bool = true,
         relativePaths: Bool = true,
         rawOutput: Bool = false,
