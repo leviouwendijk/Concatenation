@@ -1,23 +1,23 @@
 import Foundation
 
 public struct StaticIgnoreDefaults {
-    public static let staticIgnore = [
+    public static let configs = [
         ".conignore",
         ".conselect",
         ".configure",
         ".conany"
     ]
 
-    public static let backwardsCompatible = [
+    public static let common = [
         "concatenation.txt",
         "conselection.txt",
         "configure.txt"
     ]
 
-    public static let newIgnore = [
+    public static let other = [
         "concatenation",
         "tree"
     ]
 
-    public static let allPatterns = staticIgnore + backwardsCompatible + newIgnore
+    public static let allPatterns = configs + common + other
 }
