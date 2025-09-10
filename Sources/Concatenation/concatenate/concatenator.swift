@@ -191,6 +191,7 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         if filesAutoProtected {
             print(override.indent())
+            print()
         }
 
         if !errors.isEmpty {
