@@ -96,7 +96,14 @@ public extension SafelyConcatenatable {
 
                 for token in ConSafeguard.privateKeyJsonTokens {
                     if txt.contains(token) {
-                        return (true, "detected JSON private-key-like token '\(token)'")
+                        return (true, "detected JSON secret-like key \(token)")
+                     }
+                 }
+        
+                if txt.contains("{") && txt.contains(":") {
+                    // If we see both a likely secret key and a PEM header, be explicit
+                    if txt.contains("-----begin ") && (ConSafeguard.privateKeyJsonTokens.contains { txt.contains($0) }) {
+                        return (true, "detected PEM + JSON secret indicators")
                     }
                 }
 
