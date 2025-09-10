@@ -16,18 +16,286 @@
 +---------------------------------------------+
 | Sources/Concatenation/any/conany-init.swift |
 +---------------------------------------------+
+import Foundation
+
+public enum ConAnyInitError: Error {
+    case alreadyExists
+}
+
+public struct ConAnyInitializer {
+    public let path: URL
+
+    public init(at directory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)) {
+        self.path = directory.appendingPathComponent(".conany")
+    }
+
+    public func initialize(force: Bool = false) throws {
+        let fm = FileManager.default
+        let exists = fm.fileExists(atPath: path.path)
+        if exists && !force { throw ConAnyInitError.alreadyExists }
+
+        let template = """
+        # .conany — select arbitrary files anywhere on disk
+        # Syntax:
+        #   render(output.txt) {
+        #       include [
+        #           /absolute/path/to/file.txt,
+        #           /absolute/path/to/dir/,            # recursive
+        #           /Users/you/project/**/*.swift      # glob
+        #       ]
+        #       exclude [
+        #           */build/*,
+        #           *.log
+        #       ]
+        #   }
+        render(any.txt) {
+            include [
+                # /Users/you/file.txt,
+                # /Users/you/project/,
+                # /Users/you/project/**/*.swift
+            ]
+            exclude [
+                # *.log
+            ]
+        }
+        """
+        try template.write(to: path, atomically: true, encoding: .utf8)
+    }
+}
+
 (!): 1 blank lines
 
 
 +-----------------------------------------------+
 | Sources/Concatenation/any/conany-parser.swift |
 +-----------------------------------------------+
+import Foundation
+
+public struct ConAnyRenderableObject {
+    public let output: String?
+    public let include: [String]
+    public let exclude: [String]
+}
+
+public struct ConAnyConfig {
+    public let renderables: [ConAnyRenderableObject]
+}
+
+public enum ConAnyParseError: Error, LocalizedError {
+    case noneFound
+    case malformed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .noneFound: return "No render(...) blocks found."
+        case .malformed(let m): return "Malformed .conany: \(m)"
+        }
+    }
+}
+
+public enum ConAnyParser {
+    public static func parseFile(at url: URL) throws -> ConAnyConfig {
+        let raw = try String(contentsOf: url, encoding: .utf8)
+        return try parse(raw)
+    }
+
+    public static func parse(_ text: String) throws -> ConAnyConfig {
+        // strip comments
+        let lines = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { s -> String in
+                let line = String(s)
+                if let i = line.firstIndex(of: "#") { return String(line[..<i]).trimmingCharacters(in: .whitespaces) }
+                return line.trimmingCharacters(in: .whitespaces)
+            }
+
+        let joined = lines.joined(separator: "\n")
+        let renderRe = try NSRegularExpression(pattern: #"render\s*\(\s*([^\)\n]+?)\s*\)\s*\{"#, options: [])
+
+        let matches = renderRe.matches(in: joined, options: [], range: NSRange(joined.startIndex..., in: joined))
+        guard !matches.isEmpty else { throw ConAnyParseError.noneFound }
+
+        var renderables: [ConAnyRenderableObject] = []
+
+        for m in matches {
+            let outRange = Range(m.range(at: 1), in: joined)!
+            let outputToken = joined[outRange].trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+
+            let openIdx = Range(m.range, in: joined)!.upperBound
+            guard let body = sliceBlockBody(from: joined, at: openIdx) else {
+                throw ConAnyParseError.malformed("Unclosed render { } block.")
+            }
+
+            let include = try parseList("include", in: body)
+            let exclude = try parseList("exclude", in: body)
+
+            renderables.append(.init(output: outputToken.isEmpty ? nil : outputToken,
+                                     include: include,
+                                     exclude: exclude))
+        }
+
+        return ConAnyConfig(renderables: renderables)
+    }
+
+    private static func parseList(_ keyword: String, in body: String) throws -> [String] {
+        let re = try NSRegularExpression(pattern: "\(keyword)\\s*\\[([\\s\\S]*?)\\]", options: [])
+        guard let mm = re.firstMatch(in: body, options: [], range: NSRange(body.startIndex..., in: body)) else {
+            return []
+        }
+        let r = Range(mm.range(at: 1), in: body)!
+        let payload = body[r]
+        return payload
+            .split { $0 == "," || $0.isNewline }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func sliceBlockBody(from text: String, at openBraceIndex: String.Index) -> String? {
+        var depth = 1
+        var i = openBraceIndex
+        while i < text.endIndex {
+            let ch = text[i]
+            if ch == "{" { depth += 1 }
+            if ch == "}" {
+                depth -= 1
+                if depth == 0 {
+                    let start = openBraceIndex
+                    let end = text.index(before: i)
+                    return String(text[start...end])
+                }
+            }
+            i = text.index(after: i)
+        }
+        return nil
+    }
+}
+
 (!): 1 blank lines
 
 
 +----------------------------------------+
 | Sources/Concatenation/any/conany.swift |
 +----------------------------------------+
+import Foundation
+
+public enum ConAnyResolveError: Error, LocalizedError {
+    case notFound(String)
+    public var errorDescription: String? {
+        switch self {
+        case .notFound(let p): return "Path does not exist: \(p)"
+        }
+    }
+}
+
+public struct ConAnyResolver {
+    private let baseDir: String   // directory containing .conany
+
+    public init(baseDir: String) {
+        self.baseDir = URL(fileURLWithPath: baseDir).standardizedFileURL.path
+    }
+
+    // Resolve ONE renderable
+    public func resolve(
+        _ r: ConAnyRenderableObject,
+        maxDepth: Int? = nil,
+        includeDotfiles: Bool = false,
+        ignoreMap: IgnoreMap? = nil,
+        verbose: Bool = false
+    ) throws -> [URL] {
+        var out: [URL] = []
+        var seen = Set<URL>()
+
+        // includes
+        for token in r.include {
+            if verbose { print("include token: \(token)") }
+            let abs = absolutize(token)
+            if isGlob(abs) {
+                let scanRoot = staticPrefixDir(ofPattern: abs) ?? "/"
+                if verbose { print("  glob root: \(scanRoot)  pattern: \(abs)") }
+                let scanner = try FileScanner(
+                    root: scanRoot,
+                    maxDepth: maxDepth,
+                    includePatterns: [abs],
+                    excludeFilePatterns: [],
+                    excludeDirPatterns: [],
+                    includeDotfiles: includeDotfiles,
+                    includeEmpty: false,
+                    ignoreMap: ignoreMap
+                )
+                for url in try scanner.scan() where seen.insert(url.standardizedFileURL).inserted {
+                    out.append(url.standardizedFileURL)
+                }
+            } else if abs.hasSuffix("/") {
+                let dir = String(abs.dropLast())
+                if verbose { print("  dir walk: \(dir)") }
+                let walker = PathWalker(
+                    root: dir,
+                    maxDepth: maxDepth,
+                    includeDotfiles: includeDotfiles,
+                    includeEmpty: false,
+                    ignoreMap: ignoreMap
+                )
+                for url in try walker.walk() where !url.hasDirectoryPath {
+                    let std = url.standardizedFileURL
+                    if seen.insert(std).inserted { out.append(std) }
+                }
+            } else {
+                let u = URL(fileURLWithPath: abs).standardizedFileURL
+                var isDir: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: u.path, isDirectory: &isDir), !isDir.boolValue else {
+                    throw ConAnyResolveError.notFound(abs)
+                }
+                if seen.insert(u).inserted { out.append(u) }
+            }
+        }
+
+        // excludes
+        let excludePatterns = r.exclude.map { absolutize($0, allowTrailingSlash: false) }
+        let excludeRegexes = try compilePatterns(excludePatterns)
+        if !excludeRegexes.isEmpty {
+            out.removeAll { matchesAny(excludeRegexes, url: $0) }
+        }
+
+        out.sort { $0.path < $1.path }
+        return out
+    }
+
+    public func outputURL(for r: ConAnyRenderableObject) -> URL {
+        let raw = r.output ?? "any.txt"
+        let abs = absolutize(raw, allowTrailingSlash: false)
+        return URL(fileURLWithPath: abs).standardizedFileURL
+    }
+
+    private func absolutize(_ token: String, allowTrailingSlash: Bool = true) -> String {
+        let expanded = (token as NSString).expandingTildeInPath
+        if expanded.hasPrefix("/") {
+            return expanded
+        } else {
+            let joined = URL(fileURLWithPath: baseDir)
+                .appendingPathComponent(expanded).standardizedFileURL.path
+            if allowTrailingSlash, token.hasSuffix("/"), !joined.hasSuffix("/") {
+                return joined + "/"
+            }
+            return joined
+        }
+    }
+
+    private func isGlob(_ s: String) -> Bool {
+        s.contains("*") || s.contains("?")
+    }
+
+    private func staticPrefixDir(ofPattern pattern: String) -> String? {
+        guard let idx = pattern.firstIndex(where: { $0 == "*" || $0 == "?" }) else { return nil }
+        let prefix = pattern[..<idx]
+        guard let lastSlash = prefix.lastIndex(of: "/") else { return "/" }
+        let dir = String(prefix[..<lastSlash])
+        return dir.isEmpty ? "/" : dir
+    }
+}
+
 (!): 1 blank lines
 
 
@@ -72,7 +340,7 @@ public struct FileConcatenator {
         outputURL: URL,
         delimiterStyle: DelimiterStyle = .boxed,
         delimiterClosure: Bool = false,
-        maxLinesPerFile: Int?     = 5000,
+        maxLinesPerFile: Int? = 10_000,
         trimBlankLines: Bool = true,
         relativePaths: Bool = true,
         rawOutput: Bool = false,
@@ -129,10 +397,31 @@ public struct FileConcatenator {
                     handle.write(Data(blankWarnings.header.utf8))
                 }
 
-                let writeLines = maxLinesPerFile.map { Array(lines.prefix($0)) } ?? lines
+                // let writeLines = maxLinesPerFile.map { Array(lines.prefix($0)) } ?? lines
+                // for line in writeLines {
+                //     handle.write(Data((line + "\n").utf8))
+                // }
+                // totalLines += writeLines.count
+
+                let writeLines: [String]
+                let wasTruncated: Bool
+                if let limit = maxLinesPerFile, lines.count > limit {
+                    writeLines = Array(lines.prefix(limit))
+                    wasTruncated = true
+                } else {
+                    writeLines = lines
+                    wasTruncated = false
+                }
+
                 for line in writeLines {
                     handle.write(Data((line + "\n").utf8))
                 }
+
+                if wasTruncated {
+                    handle.write(Data("(!): truncated — file exceeded max line limit (\(writeLines.count)/\(lines.count) lines)\n".utf8))
+                    print("(!): truncated — file exceeded max line limit (\(writeLines.count)/\(lines.count) lines)".ansi(.yellow))
+                }
+
                 totalLines += writeLines.count
 
                 if !rawOutput {
@@ -1081,21 +1370,25 @@ public func makeConignoreFileWithMergedDefaults(
 import Foundation
 
 public struct StaticIgnoreDefaults {
-    public static let staticIgnore = [
-        ".conignore"
+    public static let configs = [
+        ".conignore",
+        ".conselect",
+        ".configure",
+        ".conany"
     ]
 
-    public static let backwardsCompatible = [
+    public static let common = [
         "concatenation.txt",
-        "concatenation-filetree.txt"
+        "conselection.txt",
+        "configure.txt"
     ]
 
-    public static let newIgnore = [
+    public static let other = [
         "concatenation",
         "tree"
     ]
 
-    public static let allPatterns = staticIgnore + backwardsCompatible + newIgnore
+    public static let allPatterns = configs + common + other
 }
 
 (!): 1 blank lines

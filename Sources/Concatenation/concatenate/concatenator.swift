@@ -16,6 +16,8 @@ public struct FileConcatenator {
     public let copyToClipboard: Bool
     public let verbose: Bool
 
+    public let context: String?
+
     public init(
         inputFiles: [URL],
         outputURL: URL,
@@ -27,7 +29,8 @@ public struct FileConcatenator {
         rawOutput: Bool = false,
         obscureMap: [String:String] = [:],
         copyToClipboard: Bool = false,
-        verbose: Bool = false
+        verbose: Bool = false,
+        context: String? = nil
     ) {
         self.inputFiles = inputFiles
         self.outputURL = outputURL
@@ -40,6 +43,7 @@ public struct FileConcatenator {
         self.obscureMap = obscureMap
         self.copyToClipboard = copyToClipboard
         self.verbose = verbose
+        self.context = context
     }
 
     public func run() throws -> Int {
@@ -50,6 +54,9 @@ public struct FileConcatenator {
         defer { handle.closeFile() }
 
         if verbose {
+            if let ctx = context {
+                print("Concatnation context: \(ctx)")
+            }
             print("Concatenating \(inputFiles.count) files → \(outputURL.path)")
         }
 
@@ -119,11 +126,21 @@ public struct FileConcatenator {
                     handle.write(Data("\n\n".utf8))
                 }
             } catch {
-                errors.append(error)
+                // errors.append(error)
+                let wrapped = ConcatError.fileProcessingFailed(url: fileURL, stage: "run-loop", underlying: error)
+                errors.append(wrapped)
             }
         }
 
         if !errors.isEmpty {
+            print("\nErrors encountered during concatenation" + (context.map { " — \($0)" } ?? ""))
+            for e in errors {
+                if let ce = e as? ConcatError {
+                    print(" • \(ce.localizedDescription)")
+                } else {
+                    print(" • \(e.localizedDescription)")
+                }
+            }
             throw MultiError(errors)
         }
 
