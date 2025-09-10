@@ -91,8 +91,7 @@ public struct FileConcatenator: SafelyConcatenatable {
             if protectSecrets && !allowSecrets {
                 if isProtectedFile(fileURL) {
                     filesAutoProtected = true
-                    let reason = "Detected filename/extension matching secret patterns. Use --allow-secrets to override."
-                    // print("Excluding protected file: \(fileURL.path) — \(reason)")
+                    let reason = "Detected filename/extension matching secret patterns."
                     printProtectionNotifier(
                         file: fileURL.path,
                         reason: reason
@@ -108,7 +107,6 @@ public struct FileConcatenator: SafelyConcatenatable {
                     if deepMatched {
                         filesAutoProtected = true
                         let reason = deepReason ?? "deep-secret heuristic matched"
-                        // print("Skipping protected file (deep): \(fileURL.path) — \(reason)")
                         printProtectionNotifier(
                             file: fileURL.path,
                             reason: reason
