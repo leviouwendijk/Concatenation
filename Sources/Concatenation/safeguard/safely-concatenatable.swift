@@ -120,9 +120,11 @@ public extension SafelyConcatenatable {
 
     func printProtectionNotifier(file: String, reason: String) {
         let override = "Use --allow-secrets to override"
+        let strFile = "file:   \(file)"
+        let strReason = "reason:   \(reason)"
         print("Excluding protected file:")
-        print("file:   ", file.indent())
-        print("reason: ", reason.indent())
+        print(strFile.indent())
+        print(strReason.indent())
         print(override.indent())
         print()
     }
