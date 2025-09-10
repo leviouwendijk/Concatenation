@@ -84,9 +84,13 @@ public struct FileConcatenator: SafelyConcatenatable {
         var totalLines = 0
         var errors: [Error] = []
 
+        var filesAutoProtected = false
+        let override = "Use --allow-secrets to override"
+
         for fileURL in inputFiles {
             if protectSecrets && !allowSecrets {
                 if isProtectedFile(fileURL) {
+                    filesAutoProtected = true
                     let reason = "Detected filename/extension matching secret patterns. Use --allow-secrets to override."
                     // print("Excluding protected file: \(fileURL.path) — \(reason)")
                     printProtectionNotifier(
@@ -102,6 +106,7 @@ public struct FileConcatenator: SafelyConcatenatable {
                 if deepSecretInspection {
                     let (deepMatched, deepReason) = deepSecretCheck(fileURL)
                     if deepMatched {
+                        filesAutoProtected = true
                         let reason = deepReason ?? "deep-secret heuristic matched"
                         // print("Skipping protected file (deep): \(fileURL.path) — \(reason)")
                         printProtectionNotifier(
@@ -182,6 +187,10 @@ public struct FileConcatenator: SafelyConcatenatable {
                 let wrapped = ConcatError.fileProcessingFailed(url: fileURL, stage: "run-loop", underlying: error)
                 errors.append(wrapped)
             }
+        }
+
+        if filesAutoProtected {
+            print(override.indent())
         }
 
         if !errors.isEmpty {
