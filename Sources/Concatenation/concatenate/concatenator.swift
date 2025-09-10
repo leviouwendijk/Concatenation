@@ -76,7 +76,7 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         if verbose {
             if let ctx = context {
-                print("Concatnation context: \(ctx)")
+                print("Concatenation context: \(ctx)")
             }
             print("Concatenating \(inputFiles.count) files → \(outputURL.path)")
         }
@@ -88,7 +88,11 @@ public struct FileConcatenator: SafelyConcatenatable {
             if protectSecrets && !allowSecrets {
                 if isProtectedFile(fileURL) {
                     let reason = "Detected filename/extension matching secret patterns. Use --allow-secrets to override."
-                    print("Skipping protected file: \(fileURL.path) — \(reason)")
+                    // print("Excluding protected file: \(fileURL.path) — \(reason)")
+                    printProtectionNotifier(
+                        file: fileURL.path,
+                        reason: reason
+                    )
                     if failOnBlockedFiles {
                         errors.append(ConcatError.fileBlockedByPolicy(url: fileURL, reason: reason))
                     }
@@ -99,7 +103,11 @@ public struct FileConcatenator: SafelyConcatenatable {
                     let (deepMatched, deepReason) = deepSecretCheck(fileURL)
                     if deepMatched {
                         let reason = deepReason ?? "deep-secret heuristic matched"
-                        print("Skipping protected file (deep): \(fileURL.path) — \(reason)")
+                        // print("Skipping protected file (deep): \(fileURL.path) — \(reason)")
+                        printProtectionNotifier(
+                            file: fileURL.path,
+                            reason: reason
+                        )
                         if failOnBlockedFiles {
                             errors.append(ConcatError.fileBlockedByPolicy(url: fileURL, reason: reason))
                         }

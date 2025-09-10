@@ -117,4 +117,13 @@ public extension SafelyConcatenatable {
             return (false, nil)
         }
     }
+
+    func printProtectionNotifier(file: String, reason: String) {
+        let override = "Use --allow-secrets to override"
+        print("Excluding protected file:")
+        print("file:   ", file.indent())
+        print("reason: ", reason.indent())
+        print(override.indent())
+        print()
+    }
 }
