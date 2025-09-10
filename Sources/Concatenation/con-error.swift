@@ -7,6 +7,7 @@ public enum ConcatError: Error, LocalizedError {
     case ignoreMapLoadFailed(url: URL, underlying: Error)
     case fileReadFailed(url: URL, stage: String, underlying: Error)    
     case fileProcessingFailed(url: URL, stage: String, underlying: Error) 
+    case fileBlockedByPolicy(url: URL, reason: String)
 
     public var errorDescription: String? {
         switch self {
@@ -22,6 +23,8 @@ public enum ConcatError: Error, LocalizedError {
             return "Failed to read file '\(url.path)' during '\(stage)': \(underlying.localizedDescription)"
         case .fileProcessingFailed(let url, let stage, let underlying):
             return "Error processing file '\(url.path)' at '\(stage)': \(underlying.localizedDescription)"
+        case .fileBlockedByPolicy(let url, let reason):
+            return "File blocked by safeguard policy: \(url.path) — \(reason)"
         }
     }
 }

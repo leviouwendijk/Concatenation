@@ -1,7 +1,7 @@
 import Foundation
 import plate
 
-public struct FileConcatenator {
+public struct FileConcatenator: SafelyConcatenatable {
     public let inputFiles: [URL]
     public let outputURL: URL
 
@@ -18,6 +18,15 @@ public struct FileConcatenator {
 
     public let context: String?
 
+    /// If true we will protect files matching secret patterns (default true).
+    public let protectSecrets: Bool
+    /// If true the user explicitly allows reading protected files (default false).
+    public let allowSecrets: Bool
+    /// If true blocked files cause the process to fail immediately (default false).
+    public let failOnBlockedFiles: Bool
+    /// If true, perform a small content peek to detect PEM-style private key headers (disabled by default).
+    public let deepSecretInspection: Bool
+
     public init(
         inputFiles: [URL],
         outputURL: URL,
@@ -30,7 +39,13 @@ public struct FileConcatenator {
         obscureMap: [String:String] = [:],
         copyToClipboard: Bool = false,
         verbose: Bool = false,
-        context: String? = nil
+
+        context: String? = nil,
+
+        protectSecrets: Bool = true,
+        allowSecrets: Bool = false,
+        failOnBlockedFiles: Bool = false,
+        deepSecretInspection: Bool = false,
     ) {
         self.inputFiles = inputFiles
         self.outputURL = outputURL
@@ -43,7 +58,13 @@ public struct FileConcatenator {
         self.obscureMap = obscureMap
         self.copyToClipboard = copyToClipboard
         self.verbose = verbose
+
         self.context = context
+
+        self.protectSecrets = protectSecrets
+        self.allowSecrets = allowSecrets
+        self.failOnBlockedFiles = failOnBlockedFiles
+        self.deepSecretInspection = deepSecretInspection
     }
 
     public func run() throws -> Int {
@@ -64,6 +85,29 @@ public struct FileConcatenator {
         var errors: [Error] = []
 
         for fileURL in inputFiles {
+            if protectSecrets && !allowSecrets {
+                if isProtectedFile(fileURL) {
+                    let reason = "Detected filename/extension matching secret patterns. Use --allow-secrets to override."
+                    print("Skipping protected file: \(fileURL.path) — \(reason)")
+                    if failOnBlockedFiles {
+                        errors.append(ConcatError.fileBlockedByPolicy(url: fileURL, reason: reason))
+                    }
+                    continue
+                }
+
+                if deepSecretInspection {
+                    let (deepMatched, deepReason) = deepSecretCheck(fileURL)
+                    if deepMatched {
+                        let reason = deepReason ?? "deep-secret heuristic matched"
+                        print("Skipping protected file (deep): \(fileURL.path) — \(reason)")
+                        if failOnBlockedFiles {
+                            errors.append(ConcatError.fileBlockedByPolicy(url: fileURL, reason: reason))
+                        }
+                        continue
+                    }
+                }
+            }
+
             do {
                 let resolved = try resolveSymlink(at: fileURL)
                 var lines = try readLines(from: resolved)
