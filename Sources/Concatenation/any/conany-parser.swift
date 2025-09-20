@@ -306,38 +306,48 @@ public enum ConAnyParser {
     }
 
     // -----------------------
-    // context parser
+    // context parser (explicitly scoped to `context { ... }`)
     // -----------------------
     private static func parseContext(in body: String) -> ConcatenationContext? {
-        var title: String? = nil
-        var details: String? = nil
+        // 1) find the `context` block inside `body`
+        guard let ctxRange = findKeywordRange("context", in: body) else {
+            return nil
+        }
 
-        // TITLE: find keyword 'title' then '=' then read to end of line
-        if let tRange = findKeywordRange("title", in: body) {
+        // find the opening '{' after 'context'
+        guard let braceIdx = indexOfCharacter("{", in: body, from: ctxRange.upperBound) else {
+            return nil
+        }
+
+        // slice the inner text of context { ... }
+        let innerStart = body.index(after: braceIdx)
+        guard let inner = sliceBlockBody(from: body, at: innerStart) else {
+            return nil
+        }
+
+        // 2) parse title = <rest-of-line> inside the context inner text
+        var title: String? = nil
+        if let tRange = findKeywordRange("title", in: inner) {
             var i = tRange.upperBound
             // advance to '='
-            while i < body.endIndex && body[i].isWhitespace { i = body.index(after: i) }
-            if i < body.endIndex && body[i] == "=" {
-                let afterEq = body.index(after: i)
-                let raw = readToLineEnd(from: afterEq, in: body)
+            while i < inner.endIndex && inner[i].isWhitespace { i = inner.index(after: i) }
+            if i < inner.endIndex && inner[i] == "=" {
+                let afterEq = inner.index(after: i)
+                let raw = readToLineEnd(from: afterEq, in: inner)
                 var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                // strip quoting if present
                 s = s.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
                 if !s.isEmpty { title = s }
-            } else {
-                // no '=' on same line — try to read until newline as fallback (or leave nil)
-                // We prefer strict `title = ...` so skip otherwise
             }
         }
 
-        // DETAILS: find keyword 'details' followed by '{' block — use sliceBlockBody
-        if let dRange = findKeywordRange("details", in: body) {
-            // find '{' after details
-            if let braceIdx = indexOfCharacter("{", in: body, from: dRange.upperBound) {
-                let innerStart = body.index(after: braceIdx)
-                if let inner = sliceBlockBody(from: body, at: innerStart) {
-                    let maybe = dedent(inner).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !maybe.isEmpty { details = maybe }
+        // 3) parse details { ... } inside the context inner text (reuse sliceBlockBody)
+        var details: String? = nil
+        if let dRange = findKeywordRange("details", in: inner) {
+            if let dBrace = indexOfCharacter("{", in: inner, from: dRange.upperBound) {
+                let dInnerStart = inner.index(after: dBrace)
+                if let dInner = sliceBlockBody(from: inner, at: dInnerStart) {
+                    let text = dedent(dInner).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !text.isEmpty { details = text }
                 }
             }
         }
