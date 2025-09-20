@@ -3,6 +3,14 @@ import Foundation
 public struct ConcatenationContext {
     public let title: String?
     public let details: String?
+    
+    public init(
+        title: String?,
+        details: String?
+    ) {
+        self.title = title
+        self.details = details
+    }
 
     public func header(outputURL: URL) -> String {
         let encoder = JSONEncoder()
@@ -33,6 +41,37 @@ public struct ConcatenationContext {
         }
         lines.append("}")
         lines.append("---CONTEXT-HEADER-END---")
+
+        return lines.joined(separator: "\n")
+    }
+
+    public func object(outputURL: URL) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = []
+
+        func jsonEncodedString(_ s: String) -> String {
+            if let data = try? encoder.encode(s), let str = String(data: data, encoding: .utf8) {
+                return str
+            }
+            return "\"\(s.replacingOccurrences(of: "\"", with: "\\\""))\""
+        }
+
+        let iso = ISO8601DateFormatter().string(from: Date())
+
+        var pairs: [(String, String)] = []
+        if let t = self.title { pairs.append(("title", jsonEncodedString(t))) }
+        if let d = self.details { pairs.append(("details", jsonEncodedString(d))) }
+        pairs.append(("output", jsonEncodedString(outputURL.path)))
+        pairs.append(("generated_at", jsonEncodedString(iso)))
+
+        var lines: [String] = []
+        lines.append("{")
+        for (i, kv) in pairs.enumerated() {
+            let (k, v) = kv
+            let comma = (i == pairs.count - 1) ? "" : ","
+            lines.append("  \"\(k)\" : \(v)\(comma)")
+        }
+        lines.append("}")
 
         return lines.joined(separator: "\n")
     }
