@@ -84,10 +84,12 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         defer { handle.closeFile() }
 
-        if let ctx = context {
-            let header = formatContextHeader(ctx, outputURL: outputURL)
-            if !header.isEmpty {
-                handle.write(Data((header + "\n\n").utf8))
+        if !rawOutput {
+            if let ctx = context {
+                let header = formatContextHeader(ctx, outputURL: outputURL)
+                if !header.isEmpty {
+                    handle.write(Data((header + "\n\n").utf8))
+                }
             }
         }
 
