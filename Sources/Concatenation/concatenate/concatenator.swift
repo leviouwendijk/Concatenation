@@ -32,7 +32,7 @@ public struct FileConcatenator: SafelyConcatenatable {
     public init(
         inputFiles: [URL],
         outputURL: URL,
-        context: ConcatenationContext?,
+        context: ConcatenationContext? = nil,
 
         delimiterStyle: DelimiterStyle = .boxed,
         delimiterClosure: Bool = false,
