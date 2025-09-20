@@ -237,34 +237,35 @@ public struct FileConcatenator: SafelyConcatenatable {
     }
 
     private func formatContextHeader(_ ctx: ConcatenationContext, outputURL: URL) -> String {
-        var dict: [String: Any] = [:]
-        if let t = ctx.title { dict["title"] = t }
-        if let d = ctx.details { dict["details"] = d }
-        dict["output"] = outputURL.path
-        dict["generated_at"] = ISO8601DateFormatter().string(from: Date())
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = []
 
-        if JSONSerialization.isValidJSONObject(dict) {
-            if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]),
-               let jsonText = String(data: data, encoding: .utf8) {
-                let header = """
-                ---CONTEXT-HEADER-BEGIN---
-                \(jsonText)
-                ---CONTEXT-HEADER-END---
-                """
-                return header
+        func jsonEncodedString(_ s: String) -> String {
+            if let data = try? encoder.encode(s), let str = String(data: data, encoding: .utf8) {
+                return str
             }
+            return "\"\(s.replacingOccurrences(of: "\"", with: "\\\""))\""
         }
+
+        let iso = ISO8601DateFormatter().string(from: Date())
+
+        var pairs: [(String, String)] = []
+        if let t = ctx.title { pairs.append(("title", jsonEncodedString(t))) }
+        if let d = ctx.details { pairs.append(("details", jsonEncodedString(d))) }
+        pairs.append(("output", jsonEncodedString(outputURL.path)))
+        pairs.append(("generated_at", jsonEncodedString(iso)))
 
         var lines: [String] = []
         lines.append("---CONTEXT-HEADER-BEGIN---")
-        if let t = ctx.title { lines.append("title: \(t)") }
-        if let d = ctx.details {
-            lines.append("details:")
-            lines.append(d)
+        lines.append("{")
+        for (i, kv) in pairs.enumerated() {
+            let (k, v) = kv
+            let comma = (i == pairs.count - 1) ? "" : ","
+            lines.append("  \"\(k)\" : \(v)\(comma)")
         }
-        lines.append("output: \(outputURL.path)")
-        lines.append("generated_at: \(ISO8601DateFormatter().string(from: Date()))")
+        lines.append("}")
         lines.append("---CONTEXT-HEADER-END---")
+
         return lines.joined(separator: "\n")
     }
 }
