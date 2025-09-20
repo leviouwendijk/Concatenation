@@ -35,6 +35,14 @@ public struct ConcatenationContext {
         return "[" + arr.map { jsonEncodedString($0) }.joined(separator: ", ") + "]"
     }
 
+    private func indentFollowingLines(_ multiLine: String, by spaces: Int) -> String {
+        guard let nlRange = multiLine.firstIndex(of: "\n") else { return multiLine }
+        let firstLine = String(multiLine[..<nlRange])
+        let rest = String(multiLine[multiLine.index(after: nlRange)...])
+        let restIndented = rest.indent(spaces)
+        return firstLine + "\n" + restIndented
+    }
+
     public func header(outputURL: URL) -> String {
         let iso = ISO8601DateFormatter().string(from: Date())
 
@@ -51,7 +59,13 @@ public struct ConcatenationContext {
         for (i, kv) in pairs.enumerated() {
             let (k, v) = kv
             let comma = (i == pairs.count - 1) ? "" : ","
-            lines.append("  \"\(k)\" : \(v)\(comma)")
+            if v.contains("\n") {
+                // put first line inline, indent following lines by 2 spaces (parent indent)
+                let indented = indentFollowingLines(v, by: 2)
+                lines.append("  \"\(k)\" : \(indented)\(comma)")
+            } else {
+                lines.append("  \"\(k)\" : \(v)\(comma)")
+            }
         }
         lines.append("}")
         lines.append("---CONTEXT-HEADER-END---")
@@ -74,7 +88,13 @@ public struct ConcatenationContext {
         for (i, kv) in pairs.enumerated() {
             let (k, v) = kv
             let comma = (i == pairs.count - 1) ? "" : ","
-            lines.append("  \"\(k)\" : \(v)\(comma)")
+            if v.contains("\n") {
+                // put first line inline, indent following lines by 2 spaces (parent indent)
+                let indented = indentFollowingLines(v, by: 2)
+                lines.append("  \"\(k)\" : \(indented)\(comma)")
+            } else {
+                lines.append("  \"\(k)\" : \(v)\(comma)")
+            }
         }
         lines.append("}")
 
