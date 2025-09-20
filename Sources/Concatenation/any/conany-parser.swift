@@ -3,31 +3,45 @@ import Foundation
 public struct ConcatenationContext {
     public let title: String?
     public let details: String?
+    public let dependencies: [String]?
     
     public init(
         title: String?,
-        details: String?
+        details: String?,
+        dependencies: [String]? = nil
     ) {
         self.title = title
         self.details = details
+        self.dependencies = dependencies
+    }
+
+    private let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted]
+        return encoder
+    }()
+
+    public func jsonEncodedString(_ s: String) -> String {
+        if let data = try? encoder.encode(s), let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "\"\(s.replacingOccurrences(of: "\"", with: "\\\""))\""
+    }
+
+    func jsonEncodedArray(_ arr: [String]) -> String {
+        if let data = try? encoder.encode(arr), let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "[" + arr.map { jsonEncodedString($0) }.joined(separator: ", ") + "]"
     }
 
     public func header(outputURL: URL) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = []
-
-        func jsonEncodedString(_ s: String) -> String {
-            if let data = try? encoder.encode(s), let str = String(data: data, encoding: .utf8) {
-                return str
-            }
-            return "\"\(s.replacingOccurrences(of: "\"", with: "\\\""))\""
-        }
-
         let iso = ISO8601DateFormatter().string(from: Date())
 
         var pairs: [(String, String)] = []
         if let t = self.title { pairs.append(("title", jsonEncodedString(t))) }
         if let d = self.details { pairs.append(("details", jsonEncodedString(d))) }
+        if let deps = self.dependencies, !deps.isEmpty { pairs.append(("dependencies", jsonEncodedArray(deps))) }
         pairs.append(("output", jsonEncodedString(outputURL.path)))
         pairs.append(("generated_at", jsonEncodedString(iso)))
 
@@ -46,21 +60,12 @@ public struct ConcatenationContext {
     }
 
     public func object(outputURL: URL) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = []
-
-        func jsonEncodedString(_ s: String) -> String {
-            if let data = try? encoder.encode(s), let str = String(data: data, encoding: .utf8) {
-                return str
-            }
-            return "\"\(s.replacingOccurrences(of: "\"", with: "\\\""))\""
-        }
-
         let iso = ISO8601DateFormatter().string(from: Date())
 
         var pairs: [(String, String)] = []
         if let t = self.title { pairs.append(("title", jsonEncodedString(t))) }
         if let d = self.details { pairs.append(("details", jsonEncodedString(d))) }
+        if let deps = self.dependencies, !deps.isEmpty { pairs.append(("dependencies", jsonEncodedArray(deps))) }
         pairs.append(("output", jsonEncodedString(outputURL.path)))
         pairs.append(("generated_at", jsonEncodedString(iso)))
 
@@ -424,8 +429,15 @@ public enum ConAnyParser {
             }
         }
 
-        if title == nil && details == nil { return nil }
-        return ConcatenationContext(title: title, details: details)
+        // 4) parse dependencies [ ... ] inside the context inner text (reuse parseListManual)
+        var dependencies: [String]? = nil
+        let deps = parseListManual("dependencies", in: inner)
+        if !deps.isEmpty {
+            dependencies = deps
+        }
+
+        if title == nil && details == nil && dependencies == nil { return nil }
+        return ConcatenationContext(title: title, details: details, dependencies: dependencies)
     }
 
     private static func sliceBlockBody(from text: String, at openBraceIndex: String.Index) -> String? {
