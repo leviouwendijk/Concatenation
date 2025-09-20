@@ -1,109 +1,8 @@
 import Foundation
 
-public struct ConcatenationContext {
-    public let title: String?
-    public let details: String?
-    public let dependencies: [String]?
-    
-    public init(
-        title: String?,
-        details: String?,
-        dependencies: [String]? = nil
-    ) {
-        self.title = title
-        self.details = details
-        self.dependencies = dependencies
-    }
-
-    private let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted]
-        return encoder
-    }()
-
-    public func jsonEncodedString(_ s: String) -> String {
-        if let data = try? encoder.encode(s), let str = String(data: data, encoding: .utf8) {
-            return str
-        }
-        return "\"\(s.replacingOccurrences(of: "\"", with: "\\\""))\""
-    }
-
-    func jsonEncodedArray(_ arr: [String]) -> String {
-        if let data = try? encoder.encode(arr), let str = String(data: data, encoding: .utf8) {
-            return str
-        }
-        return "[" + arr.map { jsonEncodedString($0) }.joined(separator: ", ") + "]"
-    }
-
-    private func indentFollowingLines(_ multiLine: String, by spaces: Int) -> String {
-        guard let nlRange = multiLine.firstIndex(of: "\n") else { return multiLine }
-        let firstLine = String(multiLine[..<nlRange])
-        let rest = String(multiLine[multiLine.index(after: nlRange)...])
-        let restIndented = rest.indent(spaces)
-        return firstLine + "\n" + restIndented
-    }
-
-    public func header(outputURL: URL) -> String {
-        let iso = ISO8601DateFormatter().string(from: Date())
-
-        var pairs: [(String, String)] = []
-        if let t = self.title { pairs.append(("title", jsonEncodedString(t))) }
-        if let d = self.details { pairs.append(("details", jsonEncodedString(d))) }
-        if let deps = self.dependencies, !deps.isEmpty { pairs.append(("dependencies", jsonEncodedArray(deps))) }
-        pairs.append(("output", jsonEncodedString(outputURL.path)))
-        pairs.append(("generated_at", jsonEncodedString(iso)))
-
-        var lines: [String] = []
-        lines.append("---CONTEXT-HEADER-BEGIN---")
-        lines.append("{")
-        for (i, kv) in pairs.enumerated() {
-            let (k, v) = kv
-            let comma = (i == pairs.count - 1) ? "" : ","
-            if v.contains("\n") {
-                // put first line inline, indent following lines by 2 spaces (parent indent)
-                let indented = indentFollowingLines(v, by: 2)
-                lines.append("  \"\(k)\" : \(indented)\(comma)")
-            } else {
-                lines.append("  \"\(k)\" : \(v)\(comma)")
-            }
-        }
-        lines.append("}")
-        lines.append("---CONTEXT-HEADER-END---")
-
-        return lines.joined(separator: "\n")
-    }
-
-    public func object(outputURL: URL) -> String {
-        let iso = ISO8601DateFormatter().string(from: Date())
-
-        var pairs: [(String, String)] = []
-        if let t = self.title { pairs.append(("title", jsonEncodedString(t))) }
-        if let d = self.details { pairs.append(("details", jsonEncodedString(d))) }
-        if let deps = self.dependencies, !deps.isEmpty { pairs.append(("dependencies", jsonEncodedArray(deps))) }
-        pairs.append(("output", jsonEncodedString(outputURL.path)))
-        pairs.append(("generated_at", jsonEncodedString(iso)))
-
-        var lines: [String] = []
-        lines.append("{")
-        for (i, kv) in pairs.enumerated() {
-            let (k, v) = kv
-            let comma = (i == pairs.count - 1) ? "" : ","
-            if v.contains("\n") {
-                // put first line inline, indent following lines by 2 spaces (parent indent)
-                let indented = indentFollowingLines(v, by: 2)
-                lines.append("  \"\(k)\" : \(indented)\(comma)")
-            } else {
-                lines.append("  \"\(k)\" : \(v)\(comma)")
-            }
-        }
-        lines.append("}")
-
-        return lines.joined(separator: "\n")
-    }
-}
-
 public struct ConAnyRenderableObject {
-    public let output: String?
+    // public let output: String?
+    public let output: String
     public let include: [String]
     public let exclude: [String]
     public let context: ConcatenationContext?
@@ -115,120 +14,17 @@ public struct ConAnyConfig {
 
 public enum ConAnyParseError: Error, LocalizedError {
     case noneFound
+    case missingRenderableObjectName
     case malformed(String)
 
     public var errorDescription: String? {
         switch self {
         case .noneFound: return "No render(...) blocks found."
+        case .missingRenderableObjectName: return "No name in parentheses. Use 'render(<object_name.txt>) {}."
         case .malformed(let m): return "Malformed .conany: \(m)"
         }
     }
 }
-
-// public enum ConAnyParser {
-//     public static func parseFile(at url: URL) throws -> ConAnyConfig {
-//         let raw = try String(contentsOf: url, encoding: .utf8)
-//         return try parse(raw)
-//     }
-
-//     public static func parse(_ text: String) throws -> ConAnyConfig {
-//         // strip comments
-//         let lines = text
-//             .replacingOccurrences(of: "\r\n", with: "\n")
-//             .split(separator: "\n", omittingEmptySubsequences: false)
-//             .map { s -> String in
-//                 let line = String(s)
-//                 if let i = line.firstIndex(of: "#") { return String(line[..<i]).trimmingCharacters(in: .whitespaces) }
-//                 return line.trimmingCharacters(in: .whitespaces)
-//             }
-
-//         let joined = lines.joined(separator: "\n")
-//         let renderRe = try NSRegularExpression(pattern: #"render\s*\(\s*([^\)\n]+?)\s*\)\s*\{"#, options: [])
-
-//         let matches = renderRe.matches(in: joined, options: [], range: NSRange(joined.startIndex..., in: joined))
-//         guard !matches.isEmpty else { throw ConAnyParseError.noneFound }
-
-//         var renderables: [ConAnyRenderableObject] = []
-
-//         for m in matches {
-//             let outRange = Range(m.range(at: 1), in: joined)!
-//             let outputToken = joined[outRange].trimmingCharacters(in: .whitespacesAndNewlines)
-//                 .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-
-//             let openIdx = Range(m.range, in: joined)!.upperBound
-//             guard let body = sliceBlockBody(from: joined, at: openIdx) else {
-//                 throw ConAnyParseError.malformed("Unclosed render { } block.")
-//             }
-
-//             let include = try parseList("include", in: body)
-//             let exclude = try parseList("exclude", in: body)
-//             let context = parseContext(in: body)
-
-//             renderables.append(
-//                 .init(
-//                     output: outputToken.isEmpty ? nil : outputToken,
-//                     include: include,
-//                     exclude: exclude,
-//                     context: context
-//                 )
-//             )
-//         }
-
-//         return ConAnyConfig(renderables: renderables)
-//     }
-
-//     private static func parseList(_ keyword: String, in body: String) throws -> [String] {
-//         let re = try NSRegularExpression(pattern: "\(keyword)\\s*\\[([\\s\\S]*?)\\]", options: [])
-//         guard let mm = re.firstMatch(in: body, options: [], range: NSRange(body.startIndex..., in: body)) else {
-//             return []
-//         }
-//         let r = Range(mm.range(at: 1), in: body)!
-//         let payload = body[r]
-//         return payload
-//             .split { $0 == "," || $0.isNewline }
-//             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-//             .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) }
-//             .filter { !$0.isEmpty }
-//     }
-
-//     private static func sliceBlockBody(from text: String, at openBraceIndex: String.Index) -> String? {
-//         var depth = 1
-//         var i = openBraceIndex
-//         while i < text.endIndex {
-//             let ch = text[i]
-//             if ch == "{" { depth += 1 }
-//             if ch == "}" {
-//                 depth -= 1
-//                 if depth == 0 {
-//                     let start = openBraceIndex
-//                     let end = text.index(before: i)
-//                     return String(text[start...end])
-//                 }
-//             }
-//             i = text.index(after: i)
-//         }
-//         return nil
-//     }
-
-//     private static func parseContext(in body: String) -> ConcatenationContext? {
-
-//     }
-
-//     private static func dedent(_ s: String) -> String {
-//         let lines = s.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-//         // compute minimum indentation of non-empty lines
-//         let nonEmpty = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-//         let minIndent = nonEmpty.map { line -> Int in
-//             var count = 0
-//             for c in line {
-//                 if c == " " { count += 1 } else { break }
-//             }
-//             return count
-//         }.min() ?? 0
-//         if minIndent == 0 { return s }
-//         return lines.map { String($0.dropFirst(minIndent)) }.joined(separator: "\n")
-//     }
-// }
 
 public enum ConAnyParser {
     public static func parseFile(at url: URL) throws -> ConAnyConfig {
@@ -287,16 +83,23 @@ public enum ConAnyParser {
                 throw ConAnyParseError.malformed("Unclosed render { } block.")
             }
 
+            if outputToken.isEmpty {
+                throw ConAnyParseError.missingRenderableObjectName
+            }
+
             let include = parseListManual("include", in: body)
             let exclude = parseListManual("exclude", in: body)
-            let context = parseContext(in: body)
+            let context = parseContext(in: body, with: outputToken)
 
-            renderables.append(.init(
-                output: outputToken.isEmpty ? nil : outputToken,
-                include: include,
-                exclude: exclude,
-                context: context
-            ))
+            renderables.append(
+                .init(
+                    // output: outputToken.isEmpty ? nil : outputToken,
+                    output: outputToken,
+                    include: include,
+                    exclude: exclude,
+                    context: context
+                )
+            )
 
             // continue search after the closing brace of this block
             // find position of the '}' that closed the block; sliceBlockBody returned inner text,
@@ -405,28 +208,23 @@ public enum ConAnyParser {
     // -----------------------
     // context parser (explicitly scoped to `context { ... }`)
     // -----------------------
-    private static func parseContext(in body: String) -> ConcatenationContext? {
-        // 1) find the `context` block inside `body`
+    private static func parseContext(in body: String, with outputToken: String) -> ConcatenationContext? {
         guard let ctxRange = findKeywordRange("context", in: body) else {
             return nil
         }
 
-        // find the opening '{' after 'context'
         guard let braceIdx = indexOfCharacter("{", in: body, from: ctxRange.upperBound) else {
             return nil
         }
 
-        // slice the inner text of context { ... }
         let innerStart = body.index(after: braceIdx)
         guard let inner = sliceBlockBody(from: body, at: innerStart) else {
             return nil
         }
 
-        // 2) parse title = <rest-of-line> inside the context inner text
         var title: String? = nil
         if let tRange = findKeywordRange("title", in: inner) {
             var i = tRange.upperBound
-            // advance to '='
             while i < inner.endIndex && inner[i].isWhitespace { i = inner.index(after: i) }
             if i < inner.endIndex && inner[i] == "=" {
                 let afterEq = inner.index(after: i)
@@ -437,7 +235,6 @@ public enum ConAnyParser {
             }
         }
 
-        // 3) parse details { ... } inside the context inner text (reuse sliceBlockBody)
         var details: String? = nil
         if let dRange = findKeywordRange("details", in: inner) {
             if let dBrace = indexOfCharacter("{", in: inner, from: dRange.upperBound) {
@@ -449,7 +246,6 @@ public enum ConAnyParser {
             }
         }
 
-        // 4) parse dependencies [ ... ] inside the context inner text (reuse parseListManual)
         var dependencies: [String]? = nil
         let deps = parseListManual("dependencies", in: inner)
         if !deps.isEmpty {
@@ -457,7 +253,12 @@ public enum ConAnyParser {
         }
 
         if title == nil && details == nil && dependencies == nil { return nil }
-        return ConcatenationContext(title: title, details: details, dependencies: dependencies)
+        return ConcatenationContext(
+            title: title,
+            details: details,
+            dependencies: dependencies,
+            concatenatedFile: outputToken
+        )
     }
 
     private static func sliceBlockBody(from text: String, at openBraceIndex: String.Index) -> String? {
@@ -493,3 +294,108 @@ public enum ConAnyParser {
         return lines.map { String($0.dropFirst(minIndent)) }.joined(separator: "\n")
     }
 }
+
+// public enum ConAnyParser {
+//     public static func parseFile(at url: URL) throws -> ConAnyConfig {
+//         let raw = try String(contentsOf: url, encoding: .utf8)
+//         return try parse(raw)
+//     }
+
+//     public static func parse(_ text: String) throws -> ConAnyConfig {
+//         // strip comments
+//         let lines = text
+//             .replacingOccurrences(of: "\r\n", with: "\n")
+//             .split(separator: "\n", omittingEmptySubsequences: false)
+//             .map { s -> String in
+//                 let line = String(s)
+//                 if let i = line.firstIndex(of: "#") { return String(line[..<i]).trimmingCharacters(in: .whitespaces) }
+//                 return line.trimmingCharacters(in: .whitespaces)
+//             }
+
+//         let joined = lines.joined(separator: "\n")
+//         let renderRe = try NSRegularExpression(pattern: #"render\s*\(\s*([^\)\n]+?)\s*\)\s*\{"#, options: [])
+
+//         let matches = renderRe.matches(in: joined, options: [], range: NSRange(joined.startIndex..., in: joined))
+//         guard !matches.isEmpty else { throw ConAnyParseError.noneFound }
+
+//         var renderables: [ConAnyRenderableObject] = []
+
+//         for m in matches {
+//             let outRange = Range(m.range(at: 1), in: joined)!
+//             let outputToken = joined[outRange].trimmingCharacters(in: .whitespacesAndNewlines)
+//                 .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+
+//             let openIdx = Range(m.range, in: joined)!.upperBound
+//             guard let body = sliceBlockBody(from: joined, at: openIdx) else {
+//                 throw ConAnyParseError.malformed("Unclosed render { } block.")
+//             }
+
+//             let include = try parseList("include", in: body)
+//             let exclude = try parseList("exclude", in: body)
+//             let context = parseContext(in: body)
+
+//             renderables.append(
+//                 .init(
+//                     output: outputToken.isEmpty ? nil : outputToken,
+//                     include: include,
+//                     exclude: exclude,
+//                     context: context
+//                 )
+//             )
+//         }
+
+//         return ConAnyConfig(renderables: renderables)
+//     }
+
+//     private static func parseList(_ keyword: String, in body: String) throws -> [String] {
+//         let re = try NSRegularExpression(pattern: "\(keyword)\\s*\\[([\\s\\S]*?)\\]", options: [])
+//         guard let mm = re.firstMatch(in: body, options: [], range: NSRange(body.startIndex..., in: body)) else {
+//             return []
+//         }
+//         let r = Range(mm.range(at: 1), in: body)!
+//         let payload = body[r]
+//         return payload
+//             .split { $0 == "," || $0.isNewline }
+//             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+//             .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) }
+//             .filter { !$0.isEmpty }
+//     }
+
+//     private static func sliceBlockBody(from text: String, at openBraceIndex: String.Index) -> String? {
+//         var depth = 1
+//         var i = openBraceIndex
+//         while i < text.endIndex {
+//             let ch = text[i]
+//             if ch == "{" { depth += 1 }
+//             if ch == "}" {
+//                 depth -= 1
+//                 if depth == 0 {
+//                     let start = openBraceIndex
+//                     let end = text.index(before: i)
+//                     return String(text[start...end])
+//                 }
+//             }
+//             i = text.index(after: i)
+//         }
+//         return nil
+//     }
+
+//     private static func parseContext(in body: String) -> ConcatenationContext? {
+
+//     }
+
+//     private static func dedent(_ s: String) -> String {
+//         let lines = s.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+//         // compute minimum indentation of non-empty lines
+//         let nonEmpty = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+//         let minIndent = nonEmpty.map { line -> Int in
+//             var count = 0
+//             for c in line {
+//                 if c == " " { count += 1 } else { break }
+//             }
+//             return count
+//         }.min() ?? 0
+//         if minIndent == 0 { return s }
+//         return lines.map { String($0.dropFirst(minIndent)) }.joined(separator: "\n")
+//     }
+// }

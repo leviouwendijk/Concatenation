@@ -83,7 +83,8 @@ public struct ConAnyResolver {
     }
 
     public func outputURL(for r: ConAnyRenderableObject) -> URL {
-        let raw = r.output ?? "any.txt"
+        // let raw = r.output ?? "any.txt"
+        let raw = r.output
         let abs = absolutize(raw, allowTrailingSlash: false)
         return URL(fileURLWithPath: abs).standardizedFileURL
     }
