@@ -84,6 +84,13 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         defer { handle.closeFile() }
 
+        if let ctx = context {
+            let header = formatContextHeader(ctx, outputURL: outputURL)
+            if !header.isEmpty {
+                handle.write(Data((header + "\n\n").utf8))
+            }
+        }
+
         if verbose {
             if let loc = location {
                 print("Concatenation location: \(loc)")
@@ -225,5 +232,37 @@ public struct FileConcatenator: SafelyConcatenatable {
             print("Done: \(totalLines) lines written")
         }
         return totalLines
+    }
+
+    private func formatContextHeader(_ ctx: ConcatenationContext, outputURL: URL) -> String {
+        var dict: [String: Any] = [:]
+        if let t = ctx.title { dict["title"] = t }
+        if let d = ctx.details { dict["details"] = d }
+        dict["output"] = outputURL.path
+        dict["generated_at"] = ISO8601DateFormatter().string(from: Date())
+
+        if JSONSerialization.isValidJSONObject(dict) {
+            if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]),
+               let jsonText = String(data: data, encoding: .utf8) {
+                let header = """
+                ---CONTEXT-HEADER-BEGIN---
+                \(jsonText)
+                ---CONTEXT-HEADER-END---
+                """
+                return header
+            }
+        }
+
+        var lines: [String] = []
+        lines.append("---CONTEXT-HEADER-BEGIN---")
+        if let t = ctx.title { lines.append("title: \(t)") }
+        if let d = ctx.details {
+            lines.append("details:")
+            lines.append(d)
+        }
+        lines.append("output: \(outputURL.path)")
+        lines.append("generated_at: \(ISO8601DateFormatter().string(from: Date()))")
+        lines.append("---CONTEXT-HEADER-END---")
+        return lines.joined(separator: "\n")
     }
 }
