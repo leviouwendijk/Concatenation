@@ -4,6 +4,7 @@ import plate
 public struct FileConcatenator: SafelyConcatenatable {
     public let inputFiles: [URL]
     public let outputURL: URL
+    public let context: ConcatenationContext?
 
     public let delimiterStyle: DelimiterStyle
     public let delimiterClosure: Bool          
@@ -16,7 +17,8 @@ public struct FileConcatenator: SafelyConcatenatable {
     public let copyToClipboard: Bool
     public let verbose: Bool
 
-    public let context: String?
+    // public let context: String?
+    public let location: String?
 
     /// If true we will protect files matching secret patterns (default true).
     public let protectSecrets: Bool
@@ -30,6 +32,8 @@ public struct FileConcatenator: SafelyConcatenatable {
     public init(
         inputFiles: [URL],
         outputURL: URL,
+        context: ConcatenationContext?,
+
         delimiterStyle: DelimiterStyle = .boxed,
         delimiterClosure: Bool = false,
         maxLinesPerFile: Int? = 10_000,
@@ -37,10 +41,12 @@ public struct FileConcatenator: SafelyConcatenatable {
         relativePaths: Bool = true,
         rawOutput: Bool = false,
         obscureMap: [String:String] = [:],
+
         copyToClipboard: Bool = false,
         verbose: Bool = false,
 
-        context: String? = nil,
+        // context: String? = nil,
+        location: String? = nil,
 
         protectSecrets: Bool = true,
         allowSecrets: Bool = false,
@@ -49,6 +55,8 @@ public struct FileConcatenator: SafelyConcatenatable {
     ) {
         self.inputFiles = inputFiles
         self.outputURL = outputURL
+        self.context = context
+
         self.delimiterStyle = delimiterStyle
         self.delimiterClosure = delimiterClosure
         self.maxLinesPerFile = maxLinesPerFile
@@ -56,10 +64,12 @@ public struct FileConcatenator: SafelyConcatenatable {
         self.relativePaths = relativePaths
         self.rawOutput = rawOutput
         self.obscureMap = obscureMap
+
         self.copyToClipboard = copyToClipboard
         self.verbose = verbose
 
-        self.context = context
+        // self.context = context
+        self.location = location
 
         self.protectSecrets = protectSecrets
         self.allowSecrets = allowSecrets
@@ -75,8 +85,8 @@ public struct FileConcatenator: SafelyConcatenatable {
         defer { handle.closeFile() }
 
         if verbose {
-            if let ctx = context {
-                print("Concatenation context: \(ctx)")
+            if let loc = location {
+                print("Concatenation location: \(loc)")
             }
             print("Concatenating \(inputFiles.count) files → \(outputURL.path)")
         }
@@ -193,7 +203,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         }
 
         if !errors.isEmpty {
-            print("\nErrors encountered during concatenation" + (context.map { " — \($0)" } ?? ""))
+            print("\nErrors encountered during concatenation" + (location.map { " — \($0)" } ?? ""))
             for e in errors {
                 if let ce = e as? ConcatError {
                     print(" • \(ce.localizedDescription)")
