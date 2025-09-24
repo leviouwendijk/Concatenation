@@ -11,26 +11,33 @@ public struct ConAnyInitializer {
         self.path = directory.appendingPathComponent(".conany")
     }
 
-    public func initialize(force: Bool = false) throws {
+    public func initialize(force: Bool = false, instructions: Bool = false) throws {
         let fm = FileManager.default
         let exists = fm.fileExists(atPath: path.path)
         if exists && !force { throw ConAnyInitError.alreadyExists }
 
-        let template = """
-        # .conany — select arbitrary files anywhere on disk
-        # Syntax:
-        #   render(output.txt) {
-        #       include [
-        #           /absolute/path/to/file.txt,
-        #           /absolute/path/to/dir/,            # recursive
-        #           /Users/you/project/**/*.swift      # glob
-        #       ]
-        #       exclude [
-        #           */build/*,
-        #           *.log
-        #       ]
-        #   }
+        var template = ""
 
+        if instructions {
+            template += """
+            # .conany — select arbitrary files anywhere on disk
+            # Syntax:
+            #   render(output.txt) {
+            #       include [
+            #           /absolute/path/to/file.txt,
+            #           /absolute/path/to/dir/,            # recursive
+            #           /Users/you/project/**/*.swift      # glob
+            #       ]
+            #       exclude [
+            #           */build/*,
+            #           *.log
+            #       ]
+            #   }
+
+            """
+        }
+
+        template += """
         render(any.txt) {
             context {
                 title = _
