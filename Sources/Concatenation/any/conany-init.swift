@@ -30,12 +30,27 @@ public struct ConAnyInitializer {
         #           *.log
         #       ]
         #   }
+
         render(any.txt) {
+            context {
+                title = _
+
+                details {
+                    _
+                }
+
+                dependencies [
+                    _
+                ]
+
+            }
+
             include [
                 # /Users/you/file.txt,
                 # /Users/you/project/,
                 # /Users/you/project/**/*.swift
             ]
+
             exclude [
                 # *.log
             ]
