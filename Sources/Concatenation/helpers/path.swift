@@ -1,5 +1,4 @@
 import Foundation
-import plate
 
 public func normalize(path: String) -> URL {
     return URL(fileURLWithPath: path)

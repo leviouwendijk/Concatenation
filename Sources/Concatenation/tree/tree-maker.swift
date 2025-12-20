@@ -1,5 +1,4 @@
 import Foundation
-import plate
 
 public struct FileTreeMaker {
     private let inputPaths: [URL]

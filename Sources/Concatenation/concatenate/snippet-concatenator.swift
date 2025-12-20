@@ -1,5 +1,4 @@
 import Foundation
-import plate
 
 public struct SnippetConcatenator {
     public let snippets: [FilteredSnippet]

@@ -2,12 +2,48 @@
   "originHash" : "c70a019c2cca1e20e98648e4267974937038e8d213168e2549449c41652a8e88",
   "pins" : [
     {
+      "identity" : "indentation",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Indentation.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "8b85325433aa97ee19c9c77f564500be189978d6"
+      }
+    },
+    {
+      "identity" : "path",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Path.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "b18278a4832ef11e4d6c8051e1ff1c03363c03a5"
+      }
+    },
+    {
       "identity" : "plate",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/leviouwendijk/plate.git",
       "state" : {
         "branch" : "master",
-        "revision" : "1ae23a6e180323ec134272905c17d2070261a5d6"
+        "revision" : "8602767890efcba15289aaa64f6cfe5a2f608b19"
+      }
+    },
+    {
+      "identity" : "terminal",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Terminal.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "f71bcf025c0f480c775d9a4fdb6d3ea3db4b33cf"
+      }
+    },
+    {
+      "identity" : "version",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Version.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "a7eeda6e3b84eca36f61366e5d420787c9aba69f"
       }
     }
   ],

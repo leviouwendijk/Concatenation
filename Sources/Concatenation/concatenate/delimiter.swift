@@ -1,4 +1,3 @@
-import Foundation
 import plate
 
 public enum DelimiterStyle: String, CaseIterable {
@@ -36,4 +35,3 @@ public enum DelimiterStyle: String, CaseIterable {
         }
     }
 }
-

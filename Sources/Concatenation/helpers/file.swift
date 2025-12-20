@@ -1,5 +1,4 @@
 import Foundation
-import plate
 
 public func compilePatterns(_ globs: [String]) throws -> [NSRegularExpression] {
     return try globs.map { glob in

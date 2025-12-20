@@ -1,5 +1,4 @@
 import Foundation
-import plate
 
 public struct ConignoreParser {
     private enum Section {
