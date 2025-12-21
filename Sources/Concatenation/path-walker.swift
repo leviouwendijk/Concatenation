@@ -1,5 +1,5 @@
 import Foundation
-import plate
+import Primitives
 
 public struct PathWalker {
     public let rootURL: URL
@@ -55,7 +55,9 @@ public struct PathWalker {
             }
         }
         recurse(rootURL, depth: 0)
-        if !errors.isEmpty { throw MultiError(errors) }
+        if !errors.isEmpty { 
+            throw MultiError(errors) 
+        }
         return results
     }
 

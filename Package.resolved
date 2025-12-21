@@ -1,6 +1,15 @@
 {
-  "originHash" : "c70a019c2cca1e20e98648e4267974937038e8d213168e2549449c41652a8e88",
+  "originHash" : "c2e6d091e8c22aadfaae814e46d2f4023cee7cbb491a6da9f6b8754de3e85e4a",
   "pins" : [
+    {
+      "identity" : "clipboard",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Clipboard.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "25d4edb471b4b19a854b0bf4f35beb47f1aca421"
+      }
+    },
     {
       "identity" : "indentation",
       "kind" : "remoteSourceControl",
@@ -11,21 +20,21 @@
       }
     },
     {
-      "identity" : "path",
+      "identity" : "primitives",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/leviouwendijk/Path.git",
+      "location" : "https://github.com/leviouwendijk/Primitives.git",
       "state" : {
         "branch" : "master",
-        "revision" : "b18278a4832ef11e4d6c8051e1ff1c03363c03a5"
+        "revision" : "3a899c26f691807ef4c36370d364698a64c99e77"
       }
     },
     {
-      "identity" : "plate",
+      "identity" : "strings",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/leviouwendijk/plate.git",
+      "location" : "https://github.com/leviouwendijk/Strings.git",
       "state" : {
         "branch" : "master",
-        "revision" : "8602767890efcba15289aaa64f6cfe5a2f608b19"
+        "revision" : "86a939d7bbb3e25808f88fbcedcee4069a5a5ae1"
       }
     },
     {
@@ -34,16 +43,7 @@
       "location" : "https://github.com/leviouwendijk/Terminal.git",
       "state" : {
         "branch" : "master",
-        "revision" : "f71bcf025c0f480c775d9a4fdb6d3ea3db4b33cf"
-      }
-    },
-    {
-      "identity" : "version",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/leviouwendijk/Version.git",
-      "state" : {
-        "branch" : "master",
-        "revision" : "a7eeda6e3b84eca36f61366e5d420787c9aba69f"
+        "revision" : "972943a2d925f8ba4bebf99c1af590de8fe896e0"
       }
     }
   ],

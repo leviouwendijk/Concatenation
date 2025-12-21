@@ -1,4 +1,4 @@
-import plate
+import Strings
 
 public enum DelimiterStyle: String, CaseIterable {
     case none

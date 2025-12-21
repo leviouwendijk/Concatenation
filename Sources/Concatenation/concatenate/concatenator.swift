@@ -1,5 +1,8 @@
 import Foundation
-import plate
+import Terminal
+import Indentation
+import Primitives
+import Clipboard
 
 public struct FileConcatenator: SafelyConcatenatable {
     public let inputFiles: [URL]

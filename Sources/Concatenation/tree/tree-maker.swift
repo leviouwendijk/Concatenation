@@ -1,4 +1,5 @@
 import Foundation
+import Clipboard
 
 public struct FileTreeMaker {
     private let inputPaths: [URL]

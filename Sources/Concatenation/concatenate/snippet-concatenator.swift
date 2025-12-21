@@ -1,4 +1,5 @@
 import Foundation
+import Clipboard
 
 public struct SnippetConcatenator {
     public let snippets: [FilteredSnippet]
