@@ -19,6 +19,7 @@ let package = Package(
         .package(url: "https://github.com/leviouwendijk/Indentation.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Terminal.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Clipboard.git", branch: "master"),
+        .package(url: "https://github.com/leviouwendijk/Position.git", branch: "master"),
     ],
     targets: [
         .target(
@@ -29,6 +30,7 @@ let package = Package(
                 .product(name: "Indentation", package: "Indentation"),
                 .product(name: "Terminal", package: "Terminal"),
                 .product(name: "Clipboard", package: "Clipboard"),
+                .product(name: "Position", package: "Position"),
             ],
             // resources: [
             //     .process("Resources")

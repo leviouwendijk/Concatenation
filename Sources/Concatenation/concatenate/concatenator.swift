@@ -3,6 +3,7 @@ import Terminal
 import Indentation
 import Primitives
 import Clipboard
+import Position
 
 public struct FileConcatenator: SafelyConcatenatable {
     public let inputFiles: [URL]
@@ -10,26 +11,23 @@ public struct FileConcatenator: SafelyConcatenatable {
     public let context: ConcatenationContext?
 
     public let delimiterStyle: DelimiterStyle
-    public let delimiterClosure: Bool          
-    public let maxLinesPerFile: Int?           
+    public let delimiterClosure: Bool
+    public let maxLinesPerFile: Int?
     public let trimBlankLines: Bool
     public let relativePaths: Bool
     public let rawOutput: Bool
+    public let includeSourceLineNumbers: Bool
+    public let includeSourceModifiedAt: Bool
 
-    public let obscureMap: [String:String]     
+    public let obscureMap: [String: String]
     public let copyToClipboard: Bool
     public let verbose: Bool
 
-    // public let context: String?
     public let location: String?
 
-    /// If true we will protect files matching secret patterns (default true).
     public let protectSecrets: Bool
-    /// If true the user explicitly allows reading protected files (default false).
     public let allowSecrets: Bool
-    /// If true blocked files cause the process to fail immediately (default false).
     public let failOnBlockedFiles: Bool
-    /// If true, perform a small content peek to detect PEM-style private key headers (disabled by default).
     public let deepSecretInspection: Bool
 
     public init(
@@ -43,18 +41,19 @@ public struct FileConcatenator: SafelyConcatenatable {
         trimBlankLines: Bool = true,
         relativePaths: Bool = true,
         rawOutput: Bool = false,
-        obscureMap: [String:String] = [:],
+        includeSourceLineNumbers: Bool = false,
+        includeSourceModifiedAt: Bool = false,
+        obscureMap: [String: String] = [:],
 
         copyToClipboard: Bool = false,
         verbose: Bool = false,
 
-        // context: String? = nil,
         location: String? = nil,
 
         protectSecrets: Bool = true,
         allowSecrets: Bool = false,
         failOnBlockedFiles: Bool = false,
-        deepSecretInspection: Bool = false,
+        deepSecretInspection: Bool = false
     ) {
         self.inputFiles = inputFiles
         self.outputURL = outputURL
@@ -66,12 +65,13 @@ public struct FileConcatenator: SafelyConcatenatable {
         self.trimBlankLines = trimBlankLines
         self.relativePaths = relativePaths
         self.rawOutput = rawOutput
+        self.includeSourceLineNumbers = includeSourceLineNumbers
+        self.includeSourceModifiedAt = includeSourceModifiedAt
         self.obscureMap = obscureMap
 
         self.copyToClipboard = copyToClipboard
         self.verbose = verbose
 
-        // self.context = context
         self.location = location
 
         self.protectSecrets = protectSecrets
@@ -81,24 +81,26 @@ public struct FileConcatenator: SafelyConcatenatable {
     }
 
     public func run() throws -> Int {
-        let fm = FileManager.default
-        fm.createFile(atPath: outputURL.path, contents: nil, attributes: nil)
-        let handle = try FileHandle(forWritingTo: outputURL)
+        let fileManager = FileManager.default
+        fileManager.createFile(
+            atPath: outputURL.path,
+            contents: nil,
+            attributes: nil
+        )
 
+        let handle = try FileHandle(forWritingTo: outputURL)
         defer { handle.closeFile() }
 
-        if !rawOutput {
-            if let ctx = context {
-                let header = ctx.header(outputURL: outputURL)
-                if !header.isEmpty {
-                    handle.write(Data((header + "\n\n").utf8))
-                }
+        if !rawOutput, let context {
+            let header = context.header(outputURL: outputURL)
+            if !header.isEmpty {
+                handle.write(Data((header + "\n\n").utf8))
             }
         }
 
         if verbose {
-            if let loc = location {
-                print("Concatenation location: \(loc)")
+            if let location {
+                print("Concatenation location: \(location)")
             }
             print("Concatenating \(inputFiles.count) files → \(outputURL.path)")
         }
@@ -118,24 +120,40 @@ public struct FileConcatenator: SafelyConcatenatable {
                         file: fileURL.path,
                         reason: reason
                     )
+
                     if failOnBlockedFiles {
-                        errors.append(ConcatError.fileBlockedByPolicy(url: fileURL, reason: reason))
+                        errors.append(
+                            ConcatError.fileBlockedByPolicy(
+                                url: fileURL,
+                                reason: reason
+                            )
+                        )
                     }
+
                     continue
                 }
 
                 if deepSecretInspection {
                     let (deepMatched, deepReason) = deepSecretCheck(fileURL)
+
                     if deepMatched {
                         filesAutoProtected = true
                         let reason = deepReason ?? "deep-secret heuristic matched"
+
                         printProtectionNotifier(
                             file: fileURL.path,
                             reason: reason
                         )
+
                         if failOnBlockedFiles {
-                            errors.append(ConcatError.fileBlockedByPolicy(url: fileURL, reason: reason))
+                            errors.append(
+                                ConcatError.fileBlockedByPolicy(
+                                    url: fileURL,
+                                    reason: reason
+                                )
+                            )
                         }
+
                         continue
                     }
                 }
@@ -145,31 +163,15 @@ public struct FileConcatenator: SafelyConcatenatable {
                 let resolved = try resolveSymlink(at: fileURL)
                 var lines = try readLines(from: resolved)
 
-                let (processedLines, blankWarnings) = processBlankLines(lines, trim: trimBlankLines)
+                let (processedLines, blankWarnings) = processBlankLines(
+                    lines,
+                    trim: trimBlankLines
+                )
                 lines = processedLines
-
-                var content = lines.joined(separator: "\n")
-                for (value, method) in obscureMap {
-                    content = content.replacingOccurrences(of: value, with: obscureValue(value, method: method))
-                }
-
-                if !rawOutput {
-                    let path = relativePaths
-                        ? resolved.path.replacingOccurrences(of: fm.currentDirectoryPath + "/", with: "")
-                        : resolved.path
-                    let hdr = delimiterStyle.header(for: path) + "\n"
-                    handle.write(Data(hdr.utf8))
-                    handle.write(Data(blankWarnings.header.utf8))
-                }
-
-                // let writeLines = maxLinesPerFile.map { Array(lines.prefix($0)) } ?? lines
-                // for line in writeLines {
-                //     handle.write(Data((line + "\n").utf8))
-                // }
-                // totalLines += writeLines.count
 
                 let writeLines: [String]
                 let wasTruncated: Bool
+
                 if let limit = maxLinesPerFile, lines.count > limit {
                     writeLines = Array(lines.prefix(limit))
                     wasTruncated = true
@@ -178,24 +180,54 @@ public struct FileConcatenator: SafelyConcatenatable {
                     wasTruncated = false
                 }
 
-                for line in writeLines {
+                let obscuredLines = applyObscuring(to: writeLines)
+
+                let slice = FileLineSlice(
+                    file: resolved,
+                    startLine: 1,
+                    lines: obscuredLines
+                )
+
+                if !rawOutput {
+                    let headerLabel = makeHeaderLabel(
+                        for: resolved,
+                        fileManager: fileManager
+                    )
+
+                    let header = delimiterStyle.header(for: headerLabel) + "\n"
+                    handle.write(Data(header.utf8))
+                    handle.write(Data(blankWarnings.header.utf8))
+                }
+
+                let bodyLines = renderedBodyLines(from: slice)
+
+                for line in bodyLines {
                     handle.write(Data((line + "\n").utf8))
                 }
 
                 if wasTruncated {
-                    handle.write(Data("(!): truncated — file exceeded max line limit (\(writeLines.count)/\(lines.count) lines)\n".utf8))
-                    print("(!): truncated — file exceeded max line limit (\(writeLines.count)/\(lines.count) lines)".ansi(.yellow))
+                    let message = "(!): truncated — file exceeded max line limit (\(writeLines.count)/\(lines.count) lines)\n"
+                    handle.write(Data(message.utf8))
+                    print(
+                        "(!): truncated — file exceeded max line limit (\(writeLines.count)/\(lines.count) lines)"
+                            .ansi(.yellow)
+                    )
                 }
 
-                totalLines += writeLines.count
+                totalLines += bodyLines.count
 
                 if !rawOutput {
-                    let path = relativePaths
-                        ? resolved.path.replacingOccurrences(of: fm.currentDirectoryPath + "/", with: "")
-                        : resolved.path
+                    let footerLabel = makeHeaderLabel(
+                        for: resolved,
+                        fileManager: fileManager
+                    )
+
                     handle.write(Data(blankWarnings.footer.utf8))
+
                     if delimiterClosure {
-                        handle.write(Data((delimiterStyle.footer(for: path) + "\n").utf8))
+                        handle.write(
+                            Data((delimiterStyle.footer(for: footerLabel) + "\n").utf8)
+                        )
                     }
                 }
 
@@ -203,8 +235,11 @@ public struct FileConcatenator: SafelyConcatenatable {
                     handle.write(Data("\n\n".utf8))
                 }
             } catch {
-                // errors.append(error)
-                let wrapped = ConcatError.fileProcessingFailed(url: fileURL, stage: "run-loop", underlying: error)
+                let wrapped = ConcatError.fileProcessingFailed(
+                    url: fileURL,
+                    stage: "run-loop",
+                    underlying: error
+                )
                 errors.append(wrapped)
             }
         }
@@ -215,19 +250,25 @@ public struct FileConcatenator: SafelyConcatenatable {
         }
 
         if !errors.isEmpty {
-            print("\nErrors encountered during concatenation" + (location.map { " — \($0)" } ?? ""))
-            for e in errors {
-                if let ce = e as? ConcatError {
-                    print(" • \(ce.localizedDescription)")
+            print(
+                "\nErrors encountered during concatenation"
+                    + (location.map { " — \($0)" } ?? "")
+            )
+
+            for error in errors {
+                if let concatError = error as? ConcatError {
+                    print(" • \(concatError.localizedDescription)")
                 } else {
-                    print(" • \(e.localizedDescription)")
+                    print(" • \(error.localizedDescription)")
                 }
             }
+
             throw MultiError(errors)
         }
 
         if copyToClipboard, let full = try? String(contentsOf: outputURL) {
             full.clipboard()
+
             if verbose {
                 print("Copied output to clipboard")
             }
@@ -236,6 +277,92 @@ public struct FileConcatenator: SafelyConcatenatable {
         if verbose {
             print("Done: \(totalLines) lines written")
         }
+
         return totalLines
+    }
+
+    private func displayPath(
+        for resolved: URL,
+        fileManager: FileManager
+    ) -> String {
+        if relativePaths {
+            return resolved.path.replacingOccurrences(
+                of: fileManager.currentDirectoryPath + "/",
+                with: ""
+            )
+        }
+
+        return resolved.path
+    }
+
+    private func makeHeaderLabel(
+        for resolved: URL,
+        fileManager: FileManager
+    ) -> String {
+        let path = displayPath(
+            for: resolved,
+            fileManager: fileManager
+        )
+
+        guard includeSourceModifiedAt,
+              let modifiedAt = sourceModifiedAtString(for: resolved)
+        else {
+            return path
+        }
+
+        return "\(path) [modified_at: \(modifiedAt)]"
+    }
+
+    private func sourceModifiedAtString(
+        for url: URL
+    ) -> String? {
+        guard let values = try? url.resourceValues(
+            forKeys: [.contentModificationDateKey]
+        ), let date = values.contentModificationDate else {
+            return nil
+        }
+
+        let formatter = ISO8601DateFormatter()
+        return formatter.string(from: date)
+    }
+
+    private func applyObscuring(
+        to lines: [String]
+    ) -> [String] {
+        guard !obscureMap.isEmpty else {
+            return lines
+        }
+
+        var content = lines.joined(separator: "\n")
+
+        for (value, method) in obscureMap {
+            content = content.replacingOccurrences(
+                of: value,
+                with: obscureValue(value, method: method)
+            )
+        }
+
+        return content
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+    }
+
+    private func renderedBodyLines(
+        from slice: FileLineSlice
+    ) -> [String] {
+        guard includeSourceLineNumbers else {
+            return slice.lines
+        }
+
+        let width = String(max(1, slice.endLine)).count
+
+        return slice.numberedLines().map { numbered in
+            let label = String(
+                format: "%\(width)d",
+                numbered.line
+            )
+
+            return "\(label) | \(numbered.text)"
+        }
     }
 }
