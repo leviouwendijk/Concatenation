@@ -28,12 +28,10 @@ enum ConAnyPathPorting {
     ) throws -> [PathExpression] {
         try renderable.includeBlocks.flatMap { block in
             try block.includes.map { pattern in
-                try PathParse.expression(
-                    resolvedIncludePattern(
-                        pattern,
-                        base: block.base,
-                        relativeTo: baseDirectory
-                    )
+                try resolvedPathExpression(
+                    from: pattern,
+                    base: block.base,
+                    relativeTo: baseDirectory
                 )
             }
         }
@@ -44,46 +42,63 @@ enum ConAnyPathPorting {
         relativeTo baseDirectory: URL
     ) throws -> [PathSelectionExpression] {
         try renderable.includeBlocks.flatMap { block in
-            try block.selections.map { selection in
-                try PathParse.selectionExpression(
-                    resolvedIncludePattern(
-                        selection,
+            try block.selections.map { raw in
+                let parsed = try PathParse.selectionExpression(raw)
+
+                return try PathSelectionExpression(
+                    path: resolvedPathExpression(
+                        parsed.path,
                         base: block.base,
                         relativeTo: baseDirectory
-                    )
+                    ),
+                    content: parsed.content
                 )
             }
         }
     }
 
-    static func resolvedIncludePattern(
-        _ pattern: String,
+    static func resolvedPathExpression(
+        from raw: String,
         base: String?,
         relativeTo baseDirectory: URL
-    ) throws -> String {
-        let trimmed = pattern.trimmingCharacters(
-            in: .whitespacesAndNewlines
+    ) throws -> PathExpression {
+        try resolvedPathExpression(
+            PathParse.expression(raw),
+            base: base,
+            relativeTo: baseDirectory
         )
+    }
 
-        guard !trimmed.isEmpty else {
-            return trimmed
-        }
-
+    static func resolvedPathExpression(
+        _ expression: PathExpression,
+        base: String?,
+        relativeTo baseDirectory: URL
+    ) throws -> PathExpression {
         guard let base,
               !base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !looksAnchored(trimmed) else {
-            return trimmed
+              expression.anchor == .relative else {
+            return expression
         }
 
-        let resolvedBase = try PathResolver.resolveString(
+        let resolvedBase = try PathResolver.resolveStandardPath(
             base,
             relativeTo: .directoryURL(baseDirectory),
             terminalHint: .directory
         )
 
-        return joinedPath(
-            lhs: resolvedBase,
-            rhs: trimmed
+        let baseComponents = resolvedBase.segments.map {
+            PathPatternComponent.literal($0.value)
+        }
+
+        let combinedComponents =
+            baseComponents + expression.pattern.components
+
+        return PathExpression(
+            anchor: .root,
+            pattern: PathPattern(
+                combinedComponents,
+                terminalHint: expression.pattern.terminalHint
+            )
         )
     }
 
@@ -270,28 +285,5 @@ enum ConAnyPathPorting {
             output,
             relativeTo: .directoryURL(baseDirectory)
         )
-    }
-
-    private static func looksAnchored(
-        _ raw: String
-    ) -> Bool {
-        raw.hasPrefix("/")
-            || raw.hasPrefix("~")
-            || raw.hasPrefix("$HOME")
-            || raw.hasPrefix("$CWD")
-    }
-
-    private static func joinedPath(
-        lhs: String,
-        rhs: String
-    ) -> String {
-        let left = lhs.hasSuffix("/")
-            ? String(lhs.dropLast())
-            : lhs
-        let right = rhs.hasPrefix("/")
-            ? String(rhs.dropFirst())
-            : rhs
-
-        return left + "/" + right
     }
 }
