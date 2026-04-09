@@ -27,7 +27,24 @@ public struct SnippetConcatenator {
 
     public func run() throws -> Int {
         let fm = FileManager.default
-        fm.createFile(atPath: outputURL.path, contents: nil, attributes: nil)
+        let parentDirectory = outputURL.deletingLastPathComponent()
+
+        if !parentDirectory.path.isEmpty,
+           parentDirectory.path != outputURL.path {
+            try fm.createDirectory(
+                at: parentDirectory,
+                withIntermediateDirectories: true
+            )
+        }
+
+        if !fm.fileExists(atPath: outputURL.path) {
+            fm.createFile(
+                atPath: outputURL.path,
+                contents: nil,
+                attributes: nil
+            )
+        }
+
         let handle = try FileHandle(forWritingTo: outputURL)
         defer { handle.closeFile() }
 
@@ -36,31 +53,38 @@ public struct SnippetConcatenator {
         }
 
         var total = 0
+
         for (i, snippet) in snippets.enumerated() {
             let header = delimiterStyle.header(for: snippet.file.path)
+
             if !header.isEmpty {
                 handle.write(Data((header + "\n").utf8))
             }
+
             for line in snippet.lines {
                 handle.write(Data((line + "\n").utf8))
                 total += 1
             }
+
             if delimiterClosure {
                 let footer = delimiterStyle.footer(for: snippet.file.path)
                 handle.write(Data((footer + "\n").utf8))
             }
+
             if i < snippets.count - 1 {
                 handle.write(Data("\n\n".utf8))
             }
         }
 
-        if copyToClipboard, let out = try? String(contentsOf: outputURL) {
+        if copyToClipboard,
+           let out = try? String(contentsOf: outputURL) {
             out.clipboard()
         }
 
         if verbose {
             print("Done: \(total) lines written")
         }
+
         return total
     }
 }
