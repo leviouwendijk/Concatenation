@@ -103,10 +103,11 @@ public struct FileConcatenator: SafelyConcatenatable {
             bootstrapContent,
             options: .init(
                 existingFilePolicy: .overwrite,
-                makeBackupOnOverride: false,
+                makeBackupOnOverride: true,
                 whitespaceOnlyIsBlank: true,
                 createIntermediateDirectories: true,
-                atomic: true
+                atomic: true,
+                maxBackupSets: 5
             )
         )
 
