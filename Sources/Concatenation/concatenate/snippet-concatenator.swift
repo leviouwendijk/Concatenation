@@ -1,5 +1,6 @@
 import Foundation
 import Clipboard
+import Writers
 
 public struct SnippetConcatenator {
     public let snippets: [FilteredSnippet]
@@ -26,27 +27,22 @@ public struct SnippetConcatenator {
     }
 
     public func run() throws -> Int {
-        let fm = FileManager.default
-        let parentDirectory = outputURL.deletingLastPathComponent()
+        let writer = StandardWriter(outputURL)
 
-        if !parentDirectory.path.isEmpty,
-           parentDirectory.path != outputURL.path {
-            try fm.createDirectory(
-                at: parentDirectory,
-                withIntermediateDirectories: true
+        try writer.write(
+            "",
+            options: .init(
+                existingFilePolicy: .overwrite,
+                makeBackupOnOverride: false,
+                whitespaceOnlyIsBlank: true,
+                createIntermediateDirectories: true,
+                atomic: true
             )
-        }
-
-        if !fm.fileExists(atPath: outputURL.path) {
-            fm.createFile(
-                atPath: outputURL.path,
-                contents: nil,
-                attributes: nil
-            )
-        }
+        )
 
         let handle = try FileHandle(forWritingTo: outputURL)
         defer { handle.closeFile() }
+        handle.seekToEndOfFile()
 
         if verbose {
             print("Concatenating \(snippets.count) snippets → \(outputURL.path)")

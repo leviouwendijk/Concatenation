@@ -21,6 +21,7 @@ let package = Package(
         .package(url: "https://github.com/leviouwendijk/Clipboard.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Position.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Path.git", branch: "master"),
+        .package(url: "https://github.com/leviouwendijk/Writers.git", branch: "master"),
     ],
     targets: [
         .target(
@@ -34,6 +35,7 @@ let package = Package(
                 .product(name: "Position", package: "Position"),
                 .product(name: "Path", package: "Path"),
                 .product(name: "PathParsing", package: "Path"),
+                .product(name: "Writers", package: "Writers"),
             ],
             // resources: [
             //     .process("Resources")

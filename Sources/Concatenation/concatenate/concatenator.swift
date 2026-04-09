@@ -4,6 +4,7 @@ import Indentation
 import Primitives
 import Clipboard
 import Position
+import Writers
 
 public struct FileConcatenator: SafelyConcatenatable {
     public let inputFiles: [URL]
@@ -82,21 +83,36 @@ public struct FileConcatenator: SafelyConcatenatable {
 
     public func run() throws -> Int {
         let fileManager = FileManager.default
-        fileManager.createFile(
-            atPath: outputURL.path,
-            contents: nil,
-            attributes: nil
+        let writer = StandardWriter(outputURL)
+
+        let bootstrapContent: String = {
+            guard !rawOutput, let context else {
+                return ""
+            }
+
+            let header = context.header(outputURL: outputURL)
+
+            guard !header.isEmpty else {
+                return ""
+            }
+
+            return header + "\n\n"
+        }()
+
+        try writer.write(
+            bootstrapContent,
+            options: .init(
+                existingFilePolicy: .overwrite,
+                makeBackupOnOverride: false,
+                whitespaceOnlyIsBlank: true,
+                createIntermediateDirectories: true,
+                atomic: true
+            )
         )
 
         let handle = try FileHandle(forWritingTo: outputURL)
         defer { handle.closeFile() }
-
-        if !rawOutput, let context {
-            let header = context.header(outputURL: outputURL)
-            if !header.isEmpty {
-                handle.write(Data((header + "\n\n").utf8))
-            }
-        }
+        handle.seekToEndOfFile()
 
         if verbose {
             if let location {
