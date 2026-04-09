@@ -1,5 +1,5 @@
 {
-  "originHash" : "dc1e67b96a390f57db20f1704c2245cebbf607a3ee351bfb88a2ff2c2025a994",
+  "originHash" : "1f6b75f155701f9a2c1ea78d8b238320058465b237c03bb5432439fc3bac089b",
   "pins" : [
     {
       "identity" : "clipboard",
@@ -20,12 +20,39 @@
       }
     },
     {
+      "identity" : "methods",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Methods.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "47d7bf31c1e547238c1900fe4a1f6961b6cc19bb"
+      }
+    },
+    {
+      "identity" : "parsing",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Parsing.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "2929fa73fb0d2a59c52ad8ba612acef56925b3a8"
+      }
+    },
+    {
+      "identity" : "path",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Path.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "41b4259ba4b0f332b31421b17632b9181471b56d"
+      }
+    },
+    {
       "identity" : "position",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/leviouwendijk/Position.git",
       "state" : {
         "branch" : "master",
-        "revision" : "25862d2572361415a692d446b091ad9f09169fcc"
+        "revision" : "70fd78230c3452d9a4471222d64324a2c084351d"
       }
     },
     {
@@ -35,6 +62,15 @@
       "state" : {
         "branch" : "master",
         "revision" : "88c0aad7d912d13fcc9131ac271d1691da998355"
+      }
+    },
+    {
+      "identity" : "protocolcomponents",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/ProtocolComponents.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "866ef7b22350aac41f455c5b2188f95f411a4507"
       }
     },
     {
@@ -52,7 +88,7 @@
       "location" : "https://github.com/leviouwendijk/Terminal.git",
       "state" : {
         "branch" : "master",
-        "revision" : "972943a2d925f8ba4bebf99c1af590de8fe896e0"
+        "revision" : "27a5abad97d8604a9314e00e6e7e6a6a7000f26b"
       }
     }
   ],

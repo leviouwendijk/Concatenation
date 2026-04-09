@@ -30,17 +30,18 @@ public struct ConAnyInitializer {
 
         if instructions {
             template += """
-            // .conany — select arbitrary files anywhere on disk
+            // .conany — select arbitrary files anywhere on disk using Path syntax
             // Syntax:
             //   render(output.txt) {
             //       include [
             //           /absolute/path/to/file.txt,
-            //           /absolute/path/to/dir/,            // recursive
-            //           /Users/you/project/**/*.swift      // glob
+            //           /absolute/path/to/dir/**,
+            //           ./Sources/**/*.swift,
+            //           ~/project/**/*.md
             //       ]
             //       exclude [
-            //           */build/*,
-            //           *.log
+            //           **/build/**,
+            //           **/*.log
             //       ]
             //   }
 
@@ -62,13 +63,14 @@ public struct ConAnyInitializer {
             }
 
             include [
-                // /Users/you/file.txt,
-                // /Users/you/project/,
-                // /Users/you/project/**/*.swift
+                // ./Sources/**/*.swift
+                // ./README.md
+                // ~/project/**/*.md
             ]
 
             exclude [
-                // *.log
+                // **/.build/**
+                // **/*.generated.swift
             ]
         }
         """

@@ -1,4 +1,6 @@
 import Foundation
+import Path
+import PathParsing
 
 public struct FilteredSnippet {
     public let file: URL
@@ -6,7 +8,7 @@ public struct FilteredSnippet {
 }
 
 public struct ConfigureResolver {
-    private let root: String
+    private let rootURL: URL
     private let maxDepth: Int?
     private let includeDotfiles: Bool
     private let ignoreMap: IgnoreMap?
@@ -17,41 +19,85 @@ public struct ConfigureResolver {
         includeDotfiles: Bool = false,
         ignoreMap: IgnoreMap? = nil
     ) {
-        self.root = root
+        self.rootURL = URL(
+            fileURLWithPath: root,
+            isDirectory: true
+        )
+        .standardizedFileURL
+
         self.maxDepth = maxDepth
         self.includeDotfiles = includeDotfiles
         self.ignoreMap = ignoreMap
     }
 
-    public func resolve(filters: [ConfigureParser.Filter]) throws -> [FilteredSnippet] {
-        var out = [FilteredSnippet]()
-        for f in filters {
-            let scanner = try FileScanner(
-                root: root,
-                maxDepth: maxDepth,
-                includePatterns: [f.glob],
-                excludeFilePatterns: [],
-                excludeDirPatterns: [],
-                includeDotfiles: includeDotfiles,
-                includeEmpty: false,
-                ignoreMap: ignoreMap
+    public func resolve(
+        filters: [ConfigureParser.Filter]
+    ) throws -> [FilteredSnippet] {
+        var out: [FilteredSnippet] = []
+
+        for filter in filters {
+            let includeExpression = try PathParse.expression(
+                filter.glob
             )
-            let matches = try scanner.scan()
-            for fileURL in matches {
-                let content = try String(contentsOf: fileURL, encoding: .utf8)
+
+            let result = try PathScan.scan(
+                PathScanSpecification(
+                    includes: [includeExpression],
+                    excludes: [],
+                    selections: []
+                ),
+                relativeTo: .directoryURL(rootURL),
+                configuration: .init(
+                    maxDepth: maxDepth,
+                    includeHidden: includeDotfiles,
+                    followSymlinks: false,
+                    emitDirectories: false,
+                    emitFiles: true
+                )
+            )
+
+            var matches: [URL] = result.matches.map { $0.url }
+            matches = try ConAnyPathPorting
+                .applyStaticIgnoreDefaults(to: matches)
+            matches = ConAnyPathPorting
+                .applyIgnoreMap(ignoreMap, to: matches)
+
+            for fileURL in matches.sorted(by: { $0.path < $1.path }) {
+                let content = try String(
+                    contentsOf: fileURL,
+                    encoding: .utf8
+                )
 
                 let allLines = content
-                .split(separator: "\n", omittingEmptySubsequences: false)
-                .map(String.init)
+                    .split(
+                        separator: "\n",
+                        omittingEmptySubsequences: false
+                    )
+                    .map(String.init)
 
-                for (idx, line) in allLines.enumerated() where line.contains(f.anchor) {
-                    let start = max(0, idx + f.offset)
-                    let end   = min(allLines.count, start + f.count)
-                    let snippetLines = Array(allLines[start..<end])
-                    out.append(FilteredSnippet(file: fileURL, lines: snippetLines))
+                for (index, line) in allLines.enumerated()
+                    where line.contains(filter.anchor)
+                {
+                    let start = max(
+                        0,
+                        index + filter.offset
+                    )
+
+                    let end = min(
+                        allLines.count,
+                        start + filter.count
+                    )
+
+                    out.append(
+                        FilteredSnippet(
+                            file: fileURL,
+                            lines: Array(allLines[start..<end])
+                        )
+                    )
                 }
             }
         }
+
         return out
     }
 }
