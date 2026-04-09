@@ -704,9 +704,15 @@ private extension ConAnyParser {
             return ""
         }
 
-        return unquoted(
-            raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        ) ?? ""
+        let trimmed = raw.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
+        guard !trimmed.isEmpty else {
+            return ""
+        }
+
+        return unquoted(trimmed) ?? trimmed
     }
 
     static func parseOptionalScalar(
