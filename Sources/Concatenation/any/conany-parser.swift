@@ -1,17 +1,69 @@
 import Foundation
 
-public struct ConAnyRenderableObject {
+public struct ConAnyIncludeBlock: Sendable, Codable, Equatable {
+    public let base: String?
+    public let show: ConAnyShowStyle
+    public let patterns: [String]
+
+    public init(
+        base: String? = nil,
+        show: ConAnyShowStyle = .full,
+        patterns: [String]
+    ) {
+        self.base = base?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.show = show
+        self.patterns = patterns
+    }
+}
+
+public enum ConAnyShowStyle: Sendable, Codable, Equatable {
+    case full
+    case relativeToBase
+    case relativeToCWD
+    case basename
+    case middleEllipsis(
+        keepFirst: Int,
+        keepLast: Int
+    )
+    case dropFirst(Int)
+}
+
+public struct ConAnyRenderableObject: Sendable, Codable, Equatable {
     public let output: String
-    public let include: [String]
+    public let includeBlocks: [ConAnyIncludeBlock]
     public let exclude: [String]
     public let context: ConcatenationContext?
+
+    public init(
+        output: String,
+        includeBlocks: [ConAnyIncludeBlock],
+        exclude: [String],
+        context: ConcatenationContext?
+    ) {
+        self.output = output
+        self.includeBlocks = includeBlocks
+        self.exclude = exclude
+        self.context = context
+    }
 }
 
-public struct ConAnyConfig {
+public extension ConAnyRenderableObject {
+    var include: [String] {
+        includeBlocks.flatMap(\.patterns)
+    }
+}
+
+public struct ConAnyConfig: Sendable, Codable, Equatable {
     public let renderables: [ConAnyRenderableObject]
+
+    public init(
+        renderables: [ConAnyRenderableObject]
+    ) {
+        self.renderables = renderables
+    }
 }
 
-public enum ConAnyParseError: Error, LocalizedError {
+public enum ConAnyParseError: Error, LocalizedError, Equatable {
     case noneFound
     case missingRenderableObjectName
     case malformed(String)
@@ -19,10 +71,10 @@ public enum ConAnyParseError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .noneFound:
-            return "No render(...) blocks found."
+            return "No file(...), render(...), or directory(...) blocks found."
 
         case .missingRenderableObjectName:
-            return "No name in parentheses. Use 'render(<object_name.txt>) {}."
+            return "Missing name in parentheses."
 
         case .malformed(let message):
             return "Malformed .conany: \(message)"
@@ -38,6 +90,7 @@ public enum ConAnyParser {
             contentsOf: url,
             encoding: .utf8
         )
+
         return try parse(raw)
     }
 
@@ -47,109 +100,33 @@ public enum ConAnyParser {
         let joined = preprocess(text)
 
         var renderables: [ConAnyRenderableObject] = []
-        var searchIndex = joined.startIndex
 
-        while let renderRange = joined.range(
-            of: "render",
-            range: searchIndex..<joined.endIndex
-        ) {
-            if !isWordBoundary(
-                boundaryBefore: renderRange.lowerBound,
-                in: joined
-            ) || !isWordBoundary(
-                boundaryAfter: renderRange.upperBound,
-                in: joined
-            ) {
-                searchIndex = renderRange.upperBound
-                continue
-            }
+        let directoryBlocks = try findNamedBlocks(
+            named: "directory",
+            in: joined,
+            allowsBareBlock: false
+        )
 
-            guard let parenOpen = indexOfCharacter(
-                "(",
-                in: joined,
-                from: renderRange.upperBound
-            ) else {
-                searchIndex = renderRange.upperBound
-                continue
-            }
-
-            guard let parenClose = findMatchingClose(
-                in: joined,
-                openAt: parenOpen,
-                openChar: "(",
-                closeChar: ")"
-            ) else {
-                throw ConAnyParseError.malformed(
-                    "Unclosed '(' after render"
-                )
-            }
-
-            let insideParens = joined[
-                joined.index(after: parenOpen)..<parenClose
-            ]
-
-            var outputToken = insideParens
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            outputToken = outputToken.trimmingCharacters(
-                in: CharacterSet(charactersIn: "\"'")
-            )
-
-            guard let braceOpen = indexOfCharacter(
-                "{",
-                in: joined,
-                from: parenClose
-            ) else {
-                throw ConAnyParseError.malformed(
-                    "Expected '{' after render(...)"
-                )
-            }
-
-            let openIndexAfterBrace = joined.index(after: braceOpen)
-
-            guard let body = sliceBlockBody(
-                from: joined,
-                at: openIndexAfterBrace
-            ) else {
-                throw ConAnyParseError.malformed(
-                    "Unclosed render { } block."
-                )
-            }
-
-            if outputToken.isEmpty {
-                throw ConAnyParseError.missingRenderableObjectName
-            }
-
-            let include = parseListManual(
-                "include",
-                in: body
-            )
-            let exclude = parseListManual(
-                "exclude",
-                in: body
-            )
-            let context = parseContext(
-                in: body,
-                with: outputToken
-            )
+        for directory in directoryBlocks {
+            let directoryName = parseSingleValueArgument(directory.argument)
 
             renderables.append(
-                .init(
-                    output: outputToken,
-                    include: include,
-                    exclude: exclude,
-                    context: context
+                contentsOf: try parseRenderableBlocks(
+                    in: directory.body,
+                    outputPrefix: directoryName
                 )
             )
-
-            if let nextSearchPos = joined.range(
-                of: body,
-                range: openIndexAfterBrace..<joined.endIndex
-            )?.upperBound {
-                searchIndex = nextSearchPos
-            } else {
-                searchIndex = joined.index(after: braceOpen)
-            }
         }
+
+        let occupiedRanges = directoryBlocks.map(\.range)
+
+        renderables.append(
+            contentsOf: try parseRenderableBlocks(
+                in: joined,
+                outputPrefix: nil,
+                skippingIfContainedIn: occupiedRanges
+            )
+        )
 
         guard !renderables.isEmpty else {
             throw ConAnyParseError.noneFound
@@ -159,21 +136,221 @@ public enum ConAnyParser {
             renderables: renderables
         )
     }
+}
 
-    private static func preprocess(
+private extension ConAnyParser {
+    struct BlockMatch {
+        let name: String
+        let argument: String?
+        let body: String
+        let range: Range<String.Index>
+    }
+
+    static func parseRenderableBlocks(
+        in text: String,
+        outputPrefix: String?,
+        skippingIfContainedIn skippedRanges: [Range<String.Index>] = []
+    ) throws -> [ConAnyRenderableObject] {
+        let fileBlocks = try findNamedBlocks(
+            named: "file",
+            in: text,
+            allowsBareBlock: false
+        )
+
+        let renderBlocks = try findNamedBlocks(
+            named: "render",
+            in: text,
+            allowsBareBlock: false
+        )
+
+        let matches = (fileBlocks + renderBlocks)
+            .sorted { $0.range.lowerBound < $1.range.lowerBound }
+
+        var out: [ConAnyRenderableObject] = []
+
+        for match in matches {
+            if skippedRanges.contains(where: { $0.contains(match.range.lowerBound) }) {
+                continue
+            }
+
+            let rawOutput = parseSingleValueArgument(match.argument)
+
+            guard !rawOutput.isEmpty else {
+                throw ConAnyParseError.missingRenderableObjectName
+            }
+
+            let output = joinedPathPrefix(
+                outputPrefix,
+                rawOutput
+            )
+
+            let modernIncludes = try parseIncludeBlocks(
+                in: match.body
+            )
+
+            let includeBlocks: [ConAnyIncludeBlock]
+            if !modernIncludes.isEmpty {
+                includeBlocks = modernIncludes
+            } else {
+                let legacyIncludes = parseListManual(
+                    "include",
+                    in: match.body
+                )
+
+                includeBlocks = legacyIncludes.isEmpty
+                    ? []
+                    : [
+                        .init(
+                            base: nil,
+                            show: .full,
+                            patterns: legacyIncludes
+                        )
+                    ]
+            }
+
+            let modernExcludes = parseBareStringBlocks(
+                named: "exclude",
+                in: match.body
+            )
+
+            let legacyExcludes = parseListManual(
+                "exclude",
+                in: match.body
+            )
+
+            let exclude = deduplicatedStrings(
+                modernExcludes + legacyExcludes
+            )
+
+            let context = parseContext(
+                in: match.body,
+                with: output
+            )
+
+            out.append(
+                .init(
+                    output: output,
+                    includeBlocks: includeBlocks,
+                    exclude: exclude,
+                    context: context
+                )
+            )
+        }
+
+        return out
+    }
+
+    static func parseIncludeBlocks(
+        in text: String
+    ) throws -> [ConAnyIncludeBlock] {
+        let blocks = try findNamedBlocks(
+            named: "include",
+            in: text,
+            allowsBareBlock: true
+        )
+
+        var out: [ConAnyIncludeBlock] = []
+
+        for block in blocks {
+            let args = parseArgumentMap(block.argument)
+
+            let base = args["from"].flatMap(parseOptionalScalar)
+            let show = try parseShowStyle(
+                args["show"]
+            )
+            let patterns = parseStringListBody(block.body)
+
+            out.append(
+                .init(
+                    base: base,
+                    show: show,
+                    patterns: patterns
+                )
+            )
+        }
+
+        return out
+    }
+
+    static func parseContext(
+        in text: String,
+        with output: String
+    ) -> ConcatenationContext? {
+        guard let block = try? findNamedBlocks(
+            named: "context",
+            in: text,
+            allowsBareBlock: true
+        ).first else {
+            return nil
+        }
+
+        let body = block.body
+
+        let title = parseAssignedScalar(
+            named: "title",
+            in: body
+        )
+
+        let details =
+            parseTripleQuotedAssignment(
+                named: "details",
+                in: body
+            )
+            ?? parseBareBlockText(
+                named: "details",
+                in: body
+            )
+            ?? parseAssignedScalar(
+                named: "details",
+                in: body
+            )
+
+        let dependencies: [String]? = {
+            let modern = parseBareStringBlocks(
+                named: "dependencies",
+                in: body
+            )
+
+            if !modern.isEmpty {
+                return modern
+            }
+
+            let legacy = parseListManual(
+                "dependencies",
+                in: body
+            )
+
+            return legacy.isEmpty ? nil : legacy
+        }()
+
+        if title == nil,
+           details == nil,
+           dependencies == nil {
+            return nil
+        }
+
+        return ConcatenationContext(
+            title: title,
+            details: details,
+            dependencies: dependencies,
+            concatenatedFile: output
+        )
+    }
+
+    static func preprocess(
         _ text: String
     ) -> String {
         text
             .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { rawLine in
                 stripComments(from: String(rawLine))
-                    .trimmingCharacters(in: .whitespaces)
             }
             .joined(separator: "\n")
     }
 
-    private static func stripComments(
+    static func stripComments(
         from line: String
     ) -> String {
         var result = ""
@@ -234,80 +411,159 @@ public enum ConAnyParser {
         return result
     }
 
-    private static func isWordBoundary(
-        boundaryBefore index: String.Index,
-        in text: String
-    ) -> Bool {
-        if index == text.startIndex {
-            return true
-        }
-
-        let before = text.index(before: index)
-        let character = text[before]
-
-        return character.isWhitespace
-            || character == "\n"
-            || character == "{"
-            || character == "}"
-            || character == "("
-            || character == ")"
-            || character == "["
-            || character == "]"
-    }
-
-    private static func isWordBoundary(
-        boundaryAfter index: String.Index,
-        in text: String
-    ) -> Bool {
-        if index == text.endIndex {
-            return true
-        }
-
-        let character = text[index]
-
-        return character.isWhitespace
-            || character == "\n"
-            || character == "{"
-            || character == "}"
-            || character == "("
-            || character == ")"
-            || character == "["
-            || character == "]"
-    }
-
-    private static func indexOfCharacter(
-        _ target: Character,
+    static func findNamedBlocks(
+        named keyword: String,
         in text: String,
-        from start: String.Index
-    ) -> String.Index? {
-        var index = start
+        allowsBareBlock: Bool
+    ) throws -> [BlockMatch] {
+        var matches: [BlockMatch] = []
+        var searchIndex = text.startIndex
 
-        while index < text.endIndex {
-            if text[index] == target {
-                return index
+        while let keywordRange = text.range(
+            of: keyword,
+            range: searchIndex..<text.endIndex
+        ) {
+            guard isWordBoundary(
+                boundaryBefore: keywordRange.lowerBound,
+                in: text
+            ),
+            isWordBoundary(
+                boundaryAfter: keywordRange.upperBound,
+                in: text
+            ) else {
+                searchIndex = keywordRange.upperBound
+                continue
             }
-            index = text.index(after: index)
+
+            var cursor = keywordRange.upperBound
+            skipTrivia(
+                in: text,
+                at: &cursor
+            )
+
+            var argument: String?
+            if cursor < text.endIndex, text[cursor] == "(" {
+                guard let parenClose = findMatchingClose(
+                    in: text,
+                    openAt: cursor,
+                    openChar: "(",
+                    closeChar: ")"
+                ) else {
+                    throw ConAnyParseError.malformed(
+                        "Unclosed '(' after \(keyword)"
+                    )
+                }
+
+                argument = String(
+                    text[text.index(after: cursor)..<parenClose]
+                )
+
+                cursor = text.index(after: parenClose)
+                skipTrivia(
+                    in: text,
+                    at: &cursor
+                )
+            } else if !allowsBareBlock {
+                searchIndex = keywordRange.upperBound
+                continue
+            }
+
+            guard cursor < text.endIndex, text[cursor] == "{" else {
+                searchIndex = keywordRange.upperBound
+                continue
+            }
+
+            guard let braceClose = findMatchingClose(
+                in: text,
+                openAt: cursor,
+                openChar: "{",
+                closeChar: "}"
+            ) else {
+                throw ConAnyParseError.malformed(
+                    "Unclosed '{' after \(keyword)"
+                )
+            }
+
+            let body = String(
+                text[text.index(after: cursor)..<braceClose]
+            )
+
+            matches.append(
+                .init(
+                    name: keyword,
+                    argument: argument,
+                    body: body,
+                    range: keywordRange.lowerBound..<text.index(after: braceClose)
+                )
+            )
+
+            searchIndex = text.index(after: braceClose)
         }
 
-        return nil
+        return matches
     }
 
-    private static func findMatchingClose(
+    static func findMatchingClose(
         in text: String,
-        openAt start: String.Index,
+        openAt openIndex: String.Index,
         openChar: Character,
         closeChar: Character
     ) -> String.Index? {
         var depth = 0
-        var index = start
+        var index = openIndex
+
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        var inTripleQuote = false
+        var escaped = false
 
         while index < text.endIndex {
             let character = text[index]
+
+            if escaped {
+                escaped = false
+                index = text.index(after: index)
+                continue
+            }
+
+            if character == "\\" && !inSingleQuote && !inTripleQuote {
+                escaped = true
+                index = text.index(after: index)
+                continue
+            }
+
+            if !inSingleQuote {
+                if text[index...].hasPrefix("\"\"\"") {
+                    inTripleQuote.toggle()
+                    index = text.index(index, offsetBy: 3)
+                    continue
+                }
+            }
+
+            if !inTripleQuote {
+                if character == "\"" && !inSingleQuote {
+                    inDoubleQuote.toggle()
+                    index = text.index(after: index)
+                    continue
+                }
+
+                if character == "'" && !inDoubleQuote {
+                    inSingleQuote.toggle()
+                    index = text.index(after: index)
+                    continue
+                }
+            }
+
+            if inSingleQuote || inDoubleQuote || inTripleQuote {
+                index = text.index(after: index)
+                continue
+            }
 
             if character == openChar {
                 depth += 1
             } else if character == closeChar {
                 depth -= 1
+
                 if depth == 0 {
                     return index
                 }
@@ -319,232 +575,659 @@ public enum ConAnyParser {
         return nil
     }
 
-    private static func findKeywordRange(
-        _ keyword: String,
-        in text: String
-    ) -> Range<String.Index>? {
-        var search = text.startIndex
+    static func parseArgumentMap(
+        _ raw: String?
+    ) -> [String: String] {
+        guard let raw else {
+            return [:]
+        }
 
-        while let range = text.range(
-            of: keyword,
-            range: search..<text.endIndex
-        ) {
-            if isWordBoundary(
-                boundaryBefore: range.lowerBound,
-                in: text
-            ) && isWordBoundary(
-                boundaryAfter: range.upperBound,
-                in: text
-            ) {
-                return range
+        let pieces = splitTopLevel(
+            raw,
+            separator: ","
+        )
+
+        var out: [String: String] = [:]
+
+        for piece in pieces {
+            guard let separator = firstTopLevelColon(in: piece) else {
+                continue
             }
 
-            search = range.upperBound
+            let key = String(
+                piece[..<separator]
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let value = String(
+                piece[piece.index(after: separator)...]
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if !key.isEmpty {
+                out[key] = value
+            }
         }
 
-        return nil
+        return out
     }
 
-    private static func readToLineEnd(
-        from start: String.Index,
+    static func parseShowStyle(
+        _ raw: String?
+    ) throws -> ConAnyShowStyle {
+        guard let raw else {
+            return .full
+        }
+
+        let value = raw.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
+        switch value {
+        case "", ".full", "full":
+            return .full
+
+        case ".relativeToBase", "relativeToBase":
+            return .relativeToBase
+
+        case ".relativeToCWD", "relativeToCWD":
+            return .relativeToCWD
+
+        case ".basename", "basename":
+            return .basename
+
+        default:
+            if let parsed = parseDropFirstShowStyle(value) {
+                return parsed
+            }
+
+            if let parsed = parseMiddleEllipsisShowStyle(value) {
+                return parsed
+            }
+
+            throw ConAnyParseError.malformed(
+                "Unsupported include(show:) value: \(value)"
+            )
+        }
+    }
+
+    static func parseDropFirstShowStyle(
+        _ raw: String
+    ) -> ConAnyShowStyle? {
+        guard let range = raw.range(
+            of: #"^\.?dropFirst\(\s*(\d+)\s*\)$"#,
+            options: .regularExpression
+        ) else {
+            return nil
+        }
+
+        let text = String(raw[range])
+
+        guard let count = firstInteger(in: text) else {
+            return nil
+        }
+
+        return .dropFirst(count)
+    }
+
+    static func parseMiddleEllipsisShowStyle(
+        _ raw: String
+    ) -> ConAnyShowStyle? {
+        guard raw.range(
+            of: #"^\.?middleEllipsis\("#,
+            options: .regularExpression
+        ) != nil else {
+            return nil
+        }
+
+        guard
+            let keepFirst = integerValue(
+                named: "keepFirst",
+                in: raw
+            ),
+            let keepLast = integerValue(
+                named: "keepLast",
+                in: raw
+            )
+        else {
+            return nil
+        }
+
+        return .middleEllipsis(
+            keepFirst: keepFirst,
+            keepLast: keepLast
+        )
+    }
+
+    static func parseSingleValueArgument(
+        _ raw: String?
+    ) -> String {
+        guard let raw else {
+            return ""
+        }
+
+        return unquoted(
+            raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        ) ?? ""
+    }
+
+    static func parseOptionalScalar(
+        _ raw: String
+    ) -> String? {
+        let trimmed = raw.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
+        guard !trimmed.isEmpty, trimmed != "_" else {
+            return nil
+        }
+
+        return unquoted(trimmed) ?? trimmed
+    }
+
+    static func parseAssignedScalar(
+        named key: String,
         in text: String
-    ) -> Substring {
-        var index = start
+    ) -> String? {
+        let pattern = #"(?m)\b\#(key)\s*=\s*(.+)$"#
 
-        while index < text.endIndex,
-              text[index].isWhitespace,
-              text[index] != "\n" {
-            index = text.index(after: index)
+        guard
+            let regex = try? NSRegularExpression(pattern: pattern),
+            let match = regex.firstMatch(
+                in: text,
+                range: NSRange(
+                    text.startIndex..<text.endIndex,
+                    in: text
+                )
+            ),
+            let range = Range(match.range(at: 1), in: text)
+        else {
+            return nil
         }
 
-        var end = index
-        while end < text.endIndex, text[end] != "\n" {
-            end = text.index(after: end)
-        }
+        let raw = String(text[range])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return text[index..<end]
+        return parseOptionalScalar(raw)
     }
 
-    private static func parseListManual(
-        _ keyword: String,
-        in body: String
+    static func parseTripleQuotedAssignment(
+        named key: String,
+        in text: String
+    ) -> String? {
+        let pattern = #"(?s)\b\#(key)\s*=\s*\"\"\"(.*?)\"\"\""#
+
+        guard
+            let regex = try? NSRegularExpression(pattern: pattern),
+            let match = regex.firstMatch(
+                in: text,
+                range: NSRange(
+                    text.startIndex..<text.endIndex,
+                    in: text
+                )
+            ),
+            let range = Range(match.range(at: 1), in: text)
+        else {
+            return nil
+        }
+
+        let raw = String(text[range])
+
+        let trimmed = raw.trimmingCharacters(
+            in: .newlines
+        )
+
+        guard !trimmed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              trimmed.trimmingCharacters(in: .whitespacesAndNewlines) != "_" else {
+            return nil
+        }
+
+        return dedent(trimmed)
+    }
+
+    static func parseBareBlockText(
+        named key: String,
+        in text: String
+    ) -> String? {
+        guard let block = try? findNamedBlocks(
+            named: key,
+            in: text,
+            allowsBareBlock: true
+        ).first else {
+            return nil
+        }
+
+        let trimmed = block.body.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
+        guard !trimmed.isEmpty, trimmed != "_" else {
+            return nil
+        }
+
+        return dedent(trimmed)
+    }
+
+    static func parseBareStringBlocks(
+        named key: String,
+        in text: String
     ) -> [String] {
-        guard let keywordRange = findKeywordRange(
-            keyword,
-            in: body
+        guard let blocks = try? findNamedBlocks(
+            named: key,
+            in: text,
+            allowsBareBlock: true
         ) else {
             return []
         }
 
-        var index = keywordRange.upperBound
-        while index < body.endIndex && body[index].isWhitespace {
-            index = body.index(after: index)
-        }
+        return deduplicatedStrings(
+            blocks.flatMap {
+                parseStringListBody($0.body)
+            }
+        )
+    }
 
-        guard index < body.endIndex, body[index] == "[" else {
-            return []
-        }
-
-        guard let closeIndex = findMatchingClose(
-            in: body,
-            openAt: index,
-            openChar: "[",
-            closeChar: "]"
-        ) else {
-            return []
-        }
-
-        let inner = body[body.index(after: index)..<closeIndex]
-
-        return inner
-            .split { $0 == "," || $0 == "\n" }
+    static func parseStringListBody(
+        _ body: String
+    ) -> [String] {
+        body
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
             .map {
                 $0.trimmingCharacters(in: .whitespacesAndNewlines)
             }
             .map {
-                $0.trimmingCharacters(
-                    in: CharacterSet(charactersIn: "\"'")
-                )
+                $0.hasSuffix(",") ? String($0.dropLast()) : $0
             }
-            .filter { !$0.isEmpty }
+            .compactMap { line -> String? in
+                guard !line.isEmpty, line != "_" else {
+                    return nil
+                }
+
+                return unquoted(line) ?? line
+            }
     }
 
-    private static func parseContext(
-        in body: String,
-        with outputToken: String
-    ) -> ConcatenationContext? {
-        guard let contextRange = findKeywordRange(
-            "context",
-            in: body
-        ) else {
-            return nil
-        }
+    static func parseListManual(
+        _ keyword: String,
+        in text: String
+    ) -> [String] {
+        var out: [String] = []
+        var searchIndex = text.startIndex
 
-        guard let braceIndex = indexOfCharacter(
-            "{",
-            in: body,
-            from: contextRange.upperBound
-        ) else {
-            return nil
-        }
-
-        let innerStart = body.index(after: braceIndex)
-
-        guard let inner = sliceBlockBody(
-            from: body,
-            at: innerStart
-        ) else {
-            return nil
-        }
-
-        var title: String?
-        if let titleRange = findKeywordRange(
-            "title",
-            in: inner
+        while let keywordRange = text.range(
+            of: keyword,
+            range: searchIndex..<text.endIndex
         ) {
-            var index = titleRange.upperBound
-
-            while index < inner.endIndex && inner[index].isWhitespace {
-                index = inner.index(after: index)
+            guard isWordBoundary(
+                boundaryBefore: keywordRange.lowerBound,
+                in: text
+            ),
+            isWordBoundary(
+                boundaryAfter: keywordRange.upperBound,
+                in: text
+            ) else {
+                searchIndex = keywordRange.upperBound
+                continue
             }
 
-            if index < inner.endIndex && inner[index] == "=" {
-                let afterEquals = inner.index(after: index)
-                let raw = readToLineEnd(
-                    from: afterEquals,
-                    in: inner
-                )
+            var cursor = keywordRange.upperBound
+            skipTrivia(
+                in: text,
+                at: &cursor
+            )
 
-                var value = raw.trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                )
-                value = value.trimmingCharacters(
-                    in: CharacterSet(charactersIn: "\"'")
-                )
-
-                if !value.isEmpty {
-                    title = value
-                }
+            guard cursor < text.endIndex, text[cursor] == "[" else {
+                searchIndex = keywordRange.upperBound
+                continue
             }
-        }
 
-        var details: String?
-        if let detailsRange = findKeywordRange(
-            "details",
-            in: inner
-        ) {
-            if let detailsBrace = indexOfCharacter(
-                "{",
-                in: inner,
-                from: detailsRange.upperBound
-            ) {
-                let detailsInnerStart = inner.index(after: detailsBrace)
-                if let detailsInner = sliceBlockBody(
-                    from: inner,
-                    at: detailsInnerStart
-                ) {
-                    let text = dedent(detailsInner)
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !text.isEmpty {
-                        details = text
-                    }
-                }
+            guard let close = findMatchingClose(
+                in: text,
+                openAt: cursor,
+                openChar: "[",
+                closeChar: "]"
+            ) else {
+                searchIndex = keywordRange.upperBound
+                continue
             }
+
+            let body = String(
+                text[text.index(after: cursor)..<close]
+            )
+
+            out.append(
+                contentsOf: parseStringListBody(body)
+            )
+
+            searchIndex = text.index(after: close)
         }
 
-        var dependencies: [String]?
-        let parsedDependencies = parseListManual(
-            "dependencies",
-            in: inner
-        )
-        if !parsedDependencies.isEmpty {
-            dependencies = parsedDependencies
-        }
-
-        if title == nil,
-           details == nil,
-           dependencies == nil {
-            return nil
-        }
-
-        return ConcatenationContext(
-            title: title,
-            details: details,
-            dependencies: dependencies,
-            concatenatedFile: outputToken
-        )
+        return deduplicatedStrings(out)
     }
 
-    private static func sliceBlockBody(
-        from text: String,
-        at openBraceIndex: String.Index
-    ) -> String? {
-        var depth = 1
-        var index = openBraceIndex
+    static func splitTopLevel(
+        _ raw: String,
+        separator: Character
+    ) -> [String] {
+        var parts: [String] = []
+        var current = ""
 
-        while index < text.endIndex {
-            let character = text[index]
+        var depthParen = 0
+        var depthBrace = 0
+        var depthBracket = 0
 
-            if character == "{" {
-                depth += 1
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        var inTripleQuote = false
+        var escaped = false
+
+        var index = raw.startIndex
+
+        while index < raw.endIndex {
+            if escaped {
+                current.append(raw[index])
+                escaped = false
+                index = raw.index(after: index)
+                continue
             }
 
-            if character == "}" {
-                depth -= 1
-                if depth == 0 {
-                    let start = openBraceIndex
-                    let end = text.index(before: index)
-                    return String(text[start...end])
+            if raw[index] == "\\" && !inSingleQuote && !inTripleQuote {
+                current.append(raw[index])
+                escaped = true
+                index = raw.index(after: index)
+                continue
+            }
+
+            if !inSingleQuote && raw[index...].hasPrefix("\"\"\"") {
+                current += "\"\"\""
+                inTripleQuote.toggle()
+                index = raw.index(index, offsetBy: 3)
+                continue
+            }
+
+            let character = raw[index]
+
+            if !inTripleQuote {
+                if character == "\"" && !inSingleQuote {
+                    inDoubleQuote.toggle()
+                    current.append(character)
+                    index = raw.index(after: index)
+                    continue
+                }
+
+                if character == "'" && !inDoubleQuote {
+                    inSingleQuote.toggle()
+                    current.append(character)
+                    index = raw.index(after: index)
+                    continue
                 }
             }
 
-            index = text.index(after: index)
+            if inSingleQuote || inDoubleQuote || inTripleQuote {
+                current.append(character)
+                index = raw.index(after: index)
+                continue
+            }
+
+            switch character {
+            case "(":
+                depthParen += 1
+            case ")":
+                depthParen -= 1
+            case "{":
+                depthBrace += 1
+            case "}":
+                depthBrace -= 1
+            case "[":
+                depthBracket += 1
+            case "]":
+                depthBracket -= 1
+            default:
+                break
+            }
+
+            if character == separator,
+               depthParen == 0,
+               depthBrace == 0,
+               depthBracket == 0 {
+                parts.append(
+                    current.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                )
+                current = ""
+            } else {
+                current.append(character)
+            }
+
+            index = raw.index(after: index)
+        }
+
+        let final = current.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
+        if !final.isEmpty {
+            parts.append(final)
+        }
+
+        return parts
+    }
+
+    static func firstTopLevelColon(
+        in raw: String
+    ) -> String.Index? {
+        var depthParen = 0
+        var depthBrace = 0
+        var depthBracket = 0
+
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        var inTripleQuote = false
+        var escaped = false
+
+        var index = raw.startIndex
+
+        while index < raw.endIndex {
+            if escaped {
+                escaped = false
+                index = raw.index(after: index)
+                continue
+            }
+
+            if raw[index] == "\\" && !inSingleQuote && !inTripleQuote {
+                escaped = true
+                index = raw.index(after: index)
+                continue
+            }
+
+            if !inSingleQuote && raw[index...].hasPrefix("\"\"\"") {
+                inTripleQuote.toggle()
+                index = raw.index(index, offsetBy: 3)
+                continue
+            }
+
+            let character = raw[index]
+
+            if !inTripleQuote {
+                if character == "\"" && !inSingleQuote {
+                    inDoubleQuote.toggle()
+                    index = raw.index(after: index)
+                    continue
+                }
+
+                if character == "'" && !inDoubleQuote {
+                    inSingleQuote.toggle()
+                    index = raw.index(after: index)
+                    continue
+                }
+            }
+
+            if inSingleQuote || inDoubleQuote || inTripleQuote {
+                index = raw.index(after: index)
+                continue
+            }
+
+            switch character {
+            case "(":
+                depthParen += 1
+            case ")":
+                depthParen -= 1
+            case "{":
+                depthBrace += 1
+            case "}":
+                depthBrace -= 1
+            case "[":
+                depthBracket += 1
+            case "]":
+                depthBracket -= 1
+            case ":" where depthParen == 0 && depthBrace == 0 && depthBracket == 0:
+                return index
+            default:
+                break
+            }
+
+            index = raw.index(after: index)
         }
 
         return nil
     }
 
-    private static func dedent(
+    static func firstInteger(
+        in raw: String
+    ) -> Int? {
+        let digits = raw.filter(\.isNumber)
+        return Int(digits)
+    }
+
+    static func integerValue(
+        named key: String,
+        in raw: String
+    ) -> Int? {
+        let pattern = #"\#(key)\s*:\s*(\d+)"#
+
+        guard
+            let regex = try? NSRegularExpression(pattern: pattern),
+            let match = regex.firstMatch(
+                in: raw,
+                range: NSRange(
+                    raw.startIndex..<raw.endIndex,
+                    in: raw
+                )
+            ),
+            let range = Range(match.range(at: 1), in: raw)
+        else {
+            return nil
+        }
+
+        return Int(raw[range])
+    }
+
+    static func skipTrivia(
+        in text: String,
+        at index: inout String.Index
+    ) {
+        while index < text.endIndex,
+              text[index].isWhitespace {
+            index = text.index(after: index)
+        }
+    }
+
+    static func isWordBoundary(
+        boundaryBefore index: String.Index,
+        in text: String
+    ) -> Bool {
+        guard index > text.startIndex else {
+            return true
+        }
+
+        let before = text[text.index(before: index)]
+
+        return !(before.isLetter || before.isNumber || before == "_")
+    }
+
+    static func isWordBoundary(
+        boundaryAfter index: String.Index,
+        in text: String
+    ) -> Bool {
+        guard index < text.endIndex else {
+            return true
+        }
+
+        let after = text[index]
+
+        return !(after.isLetter || after.isNumber || after == "_")
+    }
+
+    static func unquoted(
+        _ raw: String
+    ) -> String? {
+        let trimmed = raw.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        if trimmed.hasPrefix("\"\"\""), trimmed.hasSuffix("\"\"\""), trimmed.count >= 6 {
+            return String(
+                trimmed.dropFirst(3).dropLast(3)
+            )
+        }
+
+        if (trimmed.hasPrefix("\"") && trimmed.hasSuffix("\""))
+            || (trimmed.hasPrefix("'") && trimmed.hasSuffix("'")) {
+            return String(
+                trimmed.dropFirst().dropLast()
+            )
+        }
+
+        return nil
+    }
+
+    static func joinedPathPrefix(
+        _ prefix: String?,
+        _ output: String
+    ) -> String {
+        guard let prefix,
+              !prefix.isEmpty else {
+            return output
+        }
+
+        let lhs = prefix.hasSuffix("/")
+            ? String(prefix.dropLast())
+            : prefix
+        let rhs = output.hasPrefix("/")
+            ? String(output.dropFirst())
+            : output
+
+        return lhs + "/" + rhs
+    }
+
+    static func deduplicatedStrings(
+        _ values: [String]
+    ) -> [String] {
+        var out: [String] = []
+        var seen: Set<String> = []
+
+        for value in values {
+            let trimmed = value.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+
+            guard !trimmed.isEmpty else {
+                continue
+            }
+
+            if seen.insert(trimmed).inserted {
+                out.append(trimmed)
+            }
+        }
+
+        return out
+    }
+
+    static func dedent(
         _ string: String
     ) -> String {
         let lines = string
@@ -557,6 +1240,7 @@ public enum ConAnyParser {
 
         let minIndent = nonEmpty.map { line -> Int in
             var count = 0
+
             for character in line {
                 if character == " " {
                     count += 1
@@ -564,6 +1248,7 @@ public enum ConAnyParser {
                     break
                 }
             }
+
             return count
         }.min() ?? 0
 
@@ -572,7 +1257,13 @@ public enum ConAnyParser {
         }
 
         return lines
-            .map { String($0.dropFirst(minIndent)) }
+            .map { line in
+                if line.count >= minIndent {
+                    return String(line.dropFirst(minIndent))
+                }
+
+                return line
+            }
             .joined(separator: "\n")
     }
 }

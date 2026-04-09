@@ -44,8 +44,10 @@ public struct ConAnyResolver {
             print("ConAny resolving in \(baseDirectory.path)")
         }
 
-        let specification = try ConAnyPathPorting
-            .makeSpecification(from: renderable)
+        let specification = try ConAnyPathPorting.makeSpecification(
+            from: renderable,
+            relativeTo: baseDirectory
+        )
 
         let result = try PathScan.scan(
             specification,
@@ -63,7 +65,7 @@ public struct ConAnyResolver {
             print("PathScan warnings: \(result.warnings)")
         }
 
-        var files: [URL] = result.matches.map { $0.url }
+        var files: [URL] = result.matches.map(\.url)
         files = try ConAnyPathPorting.applyStaticIgnoreDefaults(to: files)
         files = ConAnyPathPorting.applyIgnoreMap(ignoreMap, to: files)
         files = ConAnyPathPorting.deduplicated(files)
@@ -82,5 +84,65 @@ public struct ConAnyResolver {
             )
             .standardizedFileURL
         )
+    }
+
+    public func presentedPath(
+        for url: URL,
+        in renderable: ConAnyRenderableObject
+    ) -> String {
+        let baseDirectory = URL(
+            fileURLWithPath: baseDir,
+            isDirectory: true
+        )
+        .standardizedFileURL
+
+        guard let block = bestIncludeBlock(
+            for: url,
+            in: renderable,
+            relativeTo: baseDirectory
+        ) else {
+            return url.path
+        }
+
+        return (try? ConAnyPathPorting.present(
+            url.standardizedFileURL,
+            using: block,
+            relativeTo: baseDirectory
+        )) ?? url.path
+    }
+}
+
+private extension ConAnyResolver {
+    func bestIncludeBlock(
+        for url: URL,
+        in renderable: ConAnyRenderableObject,
+        relativeTo baseDirectory: URL
+    ) -> ConAnyIncludeBlock? {
+        let standardizedURL = url.standardizedFileURL
+
+        let candidates = renderable.includeBlocks.compactMap {
+            block -> (ConAnyIncludeBlock, Int)? in
+            if let baseURL = try? ConAnyPathPorting.resolvedBaseURL(
+                for: block,
+                relativeTo: baseDirectory
+            ) {
+                let basePath = baseURL.standardizedFileURL.path
+                let targetPath = standardizedURL.path
+
+                guard targetPath == basePath
+                    || targetPath.hasPrefix(basePath + "/") else {
+                    return nil
+                }
+
+                return (block, basePath.count)
+            }
+
+            return (block, -1)
+        }
+
+        return candidates
+            .sorted { $0.1 > $1.1 }
+            .first?
+            .0
     }
 }
