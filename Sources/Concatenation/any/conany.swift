@@ -61,6 +61,13 @@ public struct ConAnyResolver {
             )
         )
 
+        if verbose {
+            for match in result.matches {
+                print("match: \(match.url.path)")
+                print("  selections: \(match.contentSelections)")
+            }
+        }
+
         if verbose, !result.warnings.isEmpty {
             print("PathScan warnings: \(result.warnings)")
         }
