@@ -3,6 +3,7 @@ import Terminal
 import Indentation
 import Primitives
 import Clipboard
+import Path
 import Position
 import Writers
 
@@ -10,6 +11,8 @@ public struct FileConcatenator: SafelyConcatenatable {
     public let inputFiles: [URL]
     public let outputURL: URL
     public let context: ConcatenationContext?
+
+    public let selectedContentByFile: [URL: [ContentSelection]]
 
     public let delimiterStyle: DelimiterStyle
     public let delimiterClosure: Bool
@@ -35,6 +38,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         inputFiles: [URL],
         outputURL: URL,
         context: ConcatenationContext? = nil,
+        selectedContentByFile: [URL: [ContentSelection]] = [:],
 
         delimiterStyle: DelimiterStyle = .boxed,
         delimiterClosure: Bool = false,
@@ -59,6 +63,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         self.inputFiles = inputFiles
         self.outputURL = outputURL
         self.context = context
+        self.selectedContentByFile = selectedContentByFile
 
         self.delimiterStyle = delimiterStyle
         self.delimiterClosure = delimiterClosure
@@ -197,12 +202,15 @@ public struct FileConcatenator: SafelyConcatenatable {
                     wasTruncated = false
                 }
 
-                let obscuredLines = applyObscuring(to: writeLines)
+                let selections = selectedContentByFile[resolved.standardizedFileURL] ?? []
+                let obscuredContent = applyObscuring(
+                    to: writeLines
+                ).joined(separator: "\n")
 
-                let slice = FileLineSlice(
+                let slices = ContentSelectionSlicer.slice(
+                    content: obscuredContent,
                     file: resolved,
-                    startLine: 1,
-                    lines: obscuredLines
+                    selections: selections
                 )
 
                 if !rawOutput {
@@ -216,10 +224,18 @@ public struct FileConcatenator: SafelyConcatenatable {
                     handle.write(Data(blankWarnings.header.utf8))
                 }
 
-                let bodyLines = renderedBodyLines(from: slice)
+                for (index, slice) in slices.enumerated() {
+                    let bodyLines = renderedBodyLines(from: slice)
 
-                for line in bodyLines {
-                    handle.write(Data((line + "\n").utf8))
+                    for line in bodyLines {
+                        handle.write(Data((line + "\n").utf8))
+                    }
+
+                    totalLines += bodyLines.count
+
+                    if index < slices.count - 1 {
+                        handle.write(Data("\n".utf8))
+                    }
                 }
 
                 if wasTruncated {
@@ -230,8 +246,6 @@ public struct FileConcatenator: SafelyConcatenatable {
                             .ansi(.yellow)
                     )
                 }
-
-                totalLines += bodyLines.count
 
                 if !rawOutput {
                     let footerLabel = makeHeaderLabel(

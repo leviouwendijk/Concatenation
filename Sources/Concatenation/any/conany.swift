@@ -27,13 +27,13 @@ public struct ConAnyResolver {
         .path
     }
 
-    public func resolve(
+    public func resolveMatches(
         _ renderable: ConAnyRenderableObject,
         maxDepth: Int? = nil,
         includeDotfiles: Bool = false,
         ignoreMap: IgnoreMap? = nil,
         verbose: Bool = false
-    ) throws -> [URL] {
+    ) throws -> [PathScanMatch] {
         let baseDirectory = URL(
             fileURLWithPath: baseDir,
             isDirectory: true
@@ -65,12 +65,39 @@ public struct ConAnyResolver {
             print("PathScan warnings: \(result.warnings)")
         }
 
-        var files: [URL] = result.matches.map(\.url)
-        files = try ConAnyPathPorting.applyStaticIgnoreDefaults(to: files)
-        files = ConAnyPathPorting.applyIgnoreMap(ignoreMap, to: files)
-        files = ConAnyPathPorting.deduplicated(files)
+        var matches = result.matches
+        let filteredURLs = try ConAnyPathPorting.applyStaticIgnoreDefaults(
+            to: matches.map(\.url)
+        )
+        let ignoreFilteredURLs = ConAnyPathPorting.applyIgnoreMap(
+            ignoreMap,
+            to: filteredURLs
+        )
+        let allowed = Set(ignoreFilteredURLs.map(\.standardizedFileURL))
 
-        return files.sorted { $0.path < $1.path }
+        matches = matches.filter {
+            allowed.contains($0.url.standardizedFileURL)
+        }
+
+        matches = ConAnyPathPorting.deduplicated(matches)
+
+        return matches.sorted { $0.url.path < $1.url.path }
+    }
+
+    public func resolve(
+        _ renderable: ConAnyRenderableObject,
+        maxDepth: Int? = nil,
+        includeDotfiles: Bool = false,
+        ignoreMap: IgnoreMap? = nil,
+        verbose: Bool = false
+    ) throws -> [URL] {
+        try resolveMatches(
+            renderable,
+            maxDepth: maxDepth,
+            includeDotfiles: includeDotfiles,
+            ignoreMap: ignoreMap,
+            verbose: verbose
+        ).map(\.url)
     }
 
     public func outputURL(

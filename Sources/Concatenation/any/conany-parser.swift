@@ -1,18 +1,26 @@
 import Foundation
+import PathParsing
 
 public struct ConAnyIncludeBlock: Sendable, Codable, Equatable {
     public let base: String?
     public let show: ConAnyShowStyle
-    public let patterns: [String]
+    public let includes: [String]
+    public let selections: [String]
 
     public init(
         base: String? = nil,
         show: ConAnyShowStyle = .full,
-        patterns: [String]
+        includes: [String] = [],
+        selections: [String] = []
     ) {
         self.base = base?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.show = show
-        self.patterns = patterns
+        self.includes = includes
+        self.selections = selections
+    }
+
+    public var patterns: [String] {
+        includes + selections
     }
 }
 
@@ -49,6 +57,14 @@ public struct ConAnyRenderableObject: Sendable, Codable, Equatable {
 
 public extension ConAnyRenderableObject {
     var include: [String] {
+        includeBlocks.flatMap(\.includes)
+    }
+
+    var selections: [String] {
+        includeBlocks.flatMap(\.selections)
+    }
+
+    var allIncludeEntries: [String] {
         includeBlocks.flatMap(\.patterns)
     }
 }
@@ -197,13 +213,18 @@ private extension ConAnyParser {
                     in: match.body
                 )
 
+                let split = try splitIncludeEntries(
+                    legacyIncludes
+                )
+
                 includeBlocks = legacyIncludes.isEmpty
                     ? []
                     : [
                         .init(
                             base: nil,
                             show: .full,
-                            patterns: legacyIncludes
+                            includes: split.includes,
+                            selections: split.selections
                         )
                     ]
             }
@@ -258,18 +279,40 @@ private extension ConAnyParser {
             let show = try parseShowStyle(
                 args["show"]
             )
-            let patterns = parseStringListBody(block.body)
+
+            let entries = parseStringListBody(block.body)
+            let split = try splitIncludeEntries(entries)
 
             out.append(
                 .init(
                     base: base,
                     show: show,
-                    patterns: patterns
+                    includes: split.includes,
+                    selections: split.selections
                 )
             )
         }
 
         return out
+    }
+
+    static func splitIncludeEntries(
+        _ entries: [String]
+    ) throws -> (includes: [String], selections: [String]) {
+        var includes: [String] = []
+        var selections: [String] = []
+
+        for entry in entries {
+            let parsed = try PathParse.selectionExpression(entry)
+
+            if parsed.content != nil {
+                selections.append(entry)
+            } else {
+                includes.append(entry)
+            }
+        }
+
+        return (includes, selections)
     }
 
     static func parseContext(

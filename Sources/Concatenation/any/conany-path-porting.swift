@@ -15,7 +15,10 @@ enum ConAnyPathPorting {
             excludes: try renderable.exclude.map {
                 try PathParse.expression($0)
             },
-            selections: []
+            selections: try selectionExpressions(
+                from: renderable,
+                relativeTo: baseDirectory
+            )
         )
     }
 
@@ -24,10 +27,27 @@ enum ConAnyPathPorting {
         relativeTo baseDirectory: URL
     ) throws -> [PathExpression] {
         try renderable.includeBlocks.flatMap { block in
-            try block.patterns.map { pattern in
+            try block.includes.map { pattern in
                 try PathParse.expression(
                     resolvedIncludePattern(
                         pattern,
+                        base: block.base,
+                        relativeTo: baseDirectory
+                    )
+                )
+            }
+        }
+    }
+
+    static func selectionExpressions(
+        from renderable: ConAnyRenderableObject,
+        relativeTo baseDirectory: URL
+    ) throws -> [PathSelectionExpression] {
+        try renderable.includeBlocks.flatMap { block in
+            try block.selections.map { selection in
+                try PathParse.selectionExpression(
+                    resolvedIncludePattern(
+                        selection,
                         base: block.base,
                         relativeTo: baseDirectory
                     )
@@ -200,6 +220,42 @@ enum ConAnyPathPorting {
         for url in urls.map(\.standardizedFileURL) {
             if seen.insert(url).inserted {
                 out.append(url)
+            }
+        }
+
+        return out
+    }
+
+    static func deduplicated(
+        _ matches: [PathScanMatch]
+    ) -> [PathScanMatch] {
+        var out: [PathScanMatch] = []
+        var seen: [URL: Int] = [:]
+
+        for match in matches {
+            let url = match.url.standardizedFileURL
+
+            if let existingIndex = seen[url] {
+                let existing = out[existingIndex]
+                let mergedSelections = existing.contentSelections
+                    + match.contentSelections.filter { selection in
+                        !existing.contentSelections.contains(selection)
+                    }
+
+                out[existingIndex] = PathScanMatch(
+                    url: existing.url,
+                    path: existing.path,
+                    contentSelections: mergedSelections
+                )
+            } else {
+                seen[url] = out.count
+                out.append(
+                    PathScanMatch(
+                        url: match.url,
+                        path: match.path,
+                        contentSelections: match.contentSelections
+                    )
+                )
             }
         }
 
