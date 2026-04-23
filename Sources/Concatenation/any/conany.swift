@@ -1,6 +1,7 @@
 import Foundation
 import Path
 import PathParsing
+import Selection
 
 public enum ConAnyResolveError: Error, LocalizedError {
     case notFound(String)
@@ -33,7 +34,7 @@ public struct ConAnyResolver {
         includeDotfiles: Bool = false,
         ignoreMap: IgnoreMap? = nil,
         verbose: Bool = false
-    ) throws -> [PathScanMatch] {
+    ) throws -> [SelectionScanMatch] {
         let baseDirectory = URL(
             fileURLWithPath: baseDir,
             isDirectory: true
@@ -49,7 +50,7 @@ public struct ConAnyResolver {
             relativeTo: baseDirectory
         )
 
-        let result = try PathScan.scan(
+        let result = try SelectionScan.scan(
             specification,
             relativeTo: .directoryURL(baseDirectory),
             configuration: .init(
@@ -69,7 +70,7 @@ public struct ConAnyResolver {
         }
 
         if verbose, !result.warnings.isEmpty {
-            print("PathScan warnings: \(result.warnings)")
+            print("SelectionScan warnings: \(result.warnings)")
         }
 
         var matches = result.matches

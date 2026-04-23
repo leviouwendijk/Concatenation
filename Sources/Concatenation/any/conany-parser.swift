@@ -1,5 +1,6 @@
 import Foundation
 import PathParsing
+import SelectionParsing
 
 public struct ConAnyIncludeBlock: Sendable, Codable, Equatable {
     public let base: String?
@@ -303,7 +304,9 @@ private extension ConAnyParser {
         var selections: [String] = []
 
         for entry in entries {
-            let parsed = try PathParse.selectionExpression(entry)
+            let parsed = try PathSelectionExpressionParser.parse(
+                entry
+            )
 
             if parsed.content != nil {
                 selections.append(entry)

@@ -1,6 +1,7 @@
 import Foundation
 import Path
 import Position
+import Selection
 
 enum ContentSelectionSlicer {
     static func slice(

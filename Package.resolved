@@ -1,5 +1,5 @@
 {
-  "originHash" : "11847d21afa36c42800490aba333b2b2db38e1f22c182c5f92b9c3a4b04a4e65",
+  "originHash" : "a2b208fcad764ae57c554ebd40355993559cf3a4a2f2ec53003ada0c20d9b9b8",
   "pins" : [
     {
       "identity" : "ansi",
@@ -26,6 +26,15 @@
       "state" : {
         "branch" : "master",
         "revision" : "395508c460782f6ec334c842eaef3856a628874b"
+      }
+    },
+    {
+      "identity" : "filetypes",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/FileTypes.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "77d9b8387e7df863e66dd4665a6f5181365ffe0d"
       }
     },
     {
@@ -61,7 +70,7 @@
       "location" : "https://github.com/leviouwendijk/Path.git",
       "state" : {
         "branch" : "master",
-        "revision" : "d27edb8e942f5d96a3504e5b23a7e53ec2704778"
+        "revision" : "8d70650058bfcec0de6c731298f96e7cb704fe19"
       }
     },
     {
@@ -89,6 +98,24 @@
       "state" : {
         "branch" : "master",
         "revision" : "866ef7b22350aac41f455c5b2188f95f411a4507"
+      }
+    },
+    {
+      "identity" : "readers",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Readers.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "0e9627e17c54a46a675286af470473636348faa6"
+      }
+    },
+    {
+      "identity" : "selection",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Selection.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "02087d38d71ce0e38a43a87be62defe8240b3011"
       }
     },
     {

@@ -44,7 +44,6 @@ public struct ConfigureResolver {
                 PathScanSpecification(
                     includes: [includeExpression],
                     excludes: [],
-                    selections: []
                 ),
                 relativeTo: .directoryURL(rootURL),
                 configuration: .init(

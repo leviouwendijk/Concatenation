@@ -1,13 +1,15 @@
 import Foundation
 import Path
 import PathParsing
+import Selection
+import SelectionParsing
 
 enum ConAnyPathPorting {
     static func makeSpecification(
         from renderable: ConAnyRenderableObject,
         relativeTo baseDirectory: URL
-    ) throws -> PathScanSpecification {
-        PathScanSpecification(
+    ) throws -> SelectionScanSpecification {
+        SelectionScanSpecification(
             includes: try includeExpressions(
                 from: renderable,
                 relativeTo: baseDirectory
@@ -43,7 +45,9 @@ enum ConAnyPathPorting {
     ) throws -> [PathSelectionExpression] {
         try renderable.includeBlocks.flatMap { block in
             try block.selections.map { raw in
-                let parsed = try PathParse.selectionExpression(raw)
+                let parsed = try PathSelectionExpressionParser.parse(
+                    raw
+                )
 
                 return try PathSelectionExpression(
                     path: resolvedPathExpression(
@@ -242,9 +246,9 @@ enum ConAnyPathPorting {
     }
 
     static func deduplicated(
-        _ matches: [PathScanMatch]
-    ) -> [PathScanMatch] {
-        var out: [PathScanMatch] = []
+        _ matches: [SelectionScanMatch]
+    ) -> [SelectionScanMatch] {
+        var out: [SelectionScanMatch] = []
         var seen: [URL: Int] = [:]
 
         for match in matches {
@@ -257,17 +261,19 @@ enum ConAnyPathPorting {
                         !existing.contentSelections.contains(selection)
                     }
 
-                out[existingIndex] = PathScanMatch(
+                out[existingIndex] = SelectionScanMatch(
                     url: existing.url,
                     path: existing.path,
+                    type: existing.type,
                     contentSelections: mergedSelections
                 )
             } else {
                 seen[url] = out.count
                 out.append(
-                    PathScanMatch(
+                    SelectionScanMatch(
                         url: match.url,
                         path: match.path,
+                        type: match.type,
                         contentSelections: match.contentSelections
                     )
                 )
