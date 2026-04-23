@@ -25,7 +25,7 @@
       "location" : "https://github.com/leviouwendijk/Difference.git",
       "state" : {
         "branch" : "master",
-        "revision" : "b4fa8a81c94340f38f4f003b846d507209f28dd5"
+        "revision" : "395508c460782f6ec334c842eaef3856a628874b"
       }
     },
     {
@@ -61,7 +61,7 @@
       "location" : "https://github.com/leviouwendijk/Path.git",
       "state" : {
         "branch" : "master",
-        "revision" : "ffc76b2a95041f1ed87e49f79916592861e3d3dd"
+        "revision" : "d27edb8e942f5d96a3504e5b23a7e53ec2704778"
       }
     },
     {
@@ -79,7 +79,7 @@
       "location" : "https://github.com/leviouwendijk/Primitives.git",
       "state" : {
         "branch" : "master",
-        "revision" : "88c0aad7d912d13fcc9131ac271d1691da998355"
+        "revision" : "67969389bcee783f45c7fc1df75a63cacc7eaf17"
       }
     },
     {
@@ -115,7 +115,7 @@
       "location" : "https://github.com/leviouwendijk/Writers.git",
       "state" : {
         "branch" : "master",
-        "revision" : "4361bd979c4df91a0d918f1517db41cec296c05d"
+        "revision" : "c279474cc0117eeeb6f54ebf8351fffe8e87ae25"
       }
     }
   ],
