@@ -37,15 +37,12 @@ public struct ConAnyInitializer {
             // directory("lib-context") {
             //     file("path.txt") {
             //         context {
-            //             title = "Path lib"
+            //             title = ""
             //
             //             details = \"\"\"
-            //                 Some description
             //             \"\"\"
             //
             //             dependencies {
-            //                 "Primitives"
-            //                 "Something"
             //             }
             //         }
             //
@@ -88,14 +85,12 @@ public struct ConAnyInitializer {
         directory("lib-context") {
             file("any.txt") {
                 context {
-                    title = "Context title"
+                    title = ""
 
                     details = \"\"\"
-                        Some description
                     \"\"\"
 
                     dependencies {
-                        "Primitives"
                     }
                 }
 
@@ -103,8 +98,8 @@ public struct ConAnyInitializer {
                     from: "$CWD",
                     show: .relativeToBase
                 ) {
-                    "./Sources/**/*.swift"
-                    "./README.md"
+                    "Sources/**/*.swift"
+                    "README.md"
                 }
 
                 exclude {

@@ -3,7 +3,9 @@ import Position
 
 public struct ConcatenationSection: Sendable {
     public let file: URL
-    public let headerLabel: String
+    public let sourcePath: String
+    public let presentedPath: String
+    public let modifiedAt: String?
     public let slices: [FileLineSlice]
 
     public let blankLineHeader: String
@@ -15,7 +17,8 @@ public struct ConcatenationSection: Sendable {
 
     public init(
         file: URL,
-        headerLabel: String,
+        presentedPath: String,
+        modifiedAt: String?,
         slices: [FileLineSlice],
         blankLineHeader: String,
         blankLineFooter: String,
@@ -23,14 +26,26 @@ public struct ConcatenationSection: Sendable {
         keptLineCount: Int,
         wasTruncated: Bool
     ) {
-        self.file = file.standardizedFileURL
-        self.headerLabel = headerLabel
+        let standardized = file.standardizedFileURL
+
+        self.file = standardized
+        self.sourcePath = standardized.path
+        self.presentedPath = presentedPath
+        self.modifiedAt = modifiedAt
         self.slices = slices
         self.blankLineHeader = blankLineHeader
         self.blankLineFooter = blankLineFooter
         self.totalLineCount = totalLineCount
         self.keptLineCount = keptLineCount
         self.wasTruncated = wasTruncated
+    }
+
+    public var headerLabel: String {
+        guard let modifiedAt else {
+            return presentedPath
+        }
+
+        return "\(presentedPath) [modified_at: \(modifiedAt)]"
     }
 
     public var selectedLineCount: Int {

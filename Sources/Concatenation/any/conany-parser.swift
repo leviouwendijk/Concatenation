@@ -3,18 +3,18 @@ import PathParsing
 import SelectionParsing
 
 public struct ConAnyIncludeBlock: Sendable, Codable, Equatable {
-    public let base: String?
-    public let show: ConAnyShowStyle
+    public let base: ConInclude?
+    public let show: ConPathShowStyle
     public let includes: [String]
     public let selections: [String]
 
     public init(
-        base: String? = nil,
-        show: ConAnyShowStyle = .full,
+        base: ConInclude? = nil,
+        show: ConPathShowStyle = .full,
         includes: [String] = [],
         selections: [String] = []
     ) {
-        self.base = base?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.base = base
         self.show = show
         self.includes = includes
         self.selections = selections
@@ -25,7 +25,7 @@ public struct ConAnyIncludeBlock: Sendable, Codable, Equatable {
     }
 }
 
-public enum ConAnyShowStyle: Sendable, Codable, Equatable {
+public enum ConPathShowStyle: Sendable, Codable, Equatable {
     case full
     case relativeToBase
     case relativeToCWD
@@ -124,24 +124,18 @@ public enum ConAnyParser {
             allowsBareBlock: false
         )
 
-        for directory in directoryBlocks {
-            let directoryName = parseSingleValueArgument(directory.argument)
-
-            renderables.append(
-                contentsOf: try parseRenderableBlocks(
-                    in: directory.body,
-                    outputPrefix: directoryName
-                )
+        renderables.append(
+            contentsOf: try parseDirectoryBlocks(
+                in: joined,
+                outputPrefix: nil
             )
-        }
-
-        let occupiedRanges = directoryBlocks.map(\.range)
+        )
 
         renderables.append(
             contentsOf: try parseRenderableBlocks(
                 in: joined,
                 outputPrefix: nil,
-                skippingIfContainedIn: occupiedRanges
+                skippingIfContainedIn: directoryBlocks.map(\.range)
             )
         )
 
@@ -161,6 +155,57 @@ private extension ConAnyParser {
         let argument: String?
         let body: String
         let range: Range<String.Index>
+    }
+
+    static func parseDirectoryBlocks(
+        in text: String,
+        outputPrefix: String?
+    ) throws -> [ConAnyRenderableObject] {
+        let directoryBlocks = try findNamedBlocks(
+            named: "directory",
+            in: text,
+            allowsBareBlock: false
+        )
+
+        var out: [ConAnyRenderableObject] = []
+
+        for directory in directoryBlocks {
+            let directoryName = parseSingleValueArgument(
+                directory.argument
+            )
+
+            guard !directoryName.isEmpty else {
+                throw ConAnyParseError.missingRenderableObjectName
+            }
+
+            let nestedPrefix = joinedPathPrefix(
+                outputPrefix,
+                directoryName
+            )
+
+            let nestedDirectoryBlocks = try findNamedBlocks(
+                named: "directory",
+                in: directory.body,
+                allowsBareBlock: false
+            )
+
+            out.append(
+                contentsOf: try parseDirectoryBlocks(
+                    in: directory.body,
+                    outputPrefix: nestedPrefix
+                )
+            )
+
+            out.append(
+                contentsOf: try parseRenderableBlocks(
+                    in: directory.body,
+                    outputPrefix: nestedPrefix,
+                    skippingIfContainedIn: nestedDirectoryBlocks.map(\.range)
+                )
+            )
+        }
+
+        return out
     }
 
     static func parseRenderableBlocks(
@@ -209,7 +254,7 @@ private extension ConAnyParser {
             if !modernIncludes.isEmpty {
                 includeBlocks = modernIncludes
             } else {
-                let legacyIncludes = parseListManual(
+                let legacyIncludes = parsePathListManual(
                     "include",
                     in: match.body
                 )
@@ -230,12 +275,12 @@ private extension ConAnyParser {
                     ]
             }
 
-            let modernExcludes = parseBareStringBlocks(
+            let modernExcludes = parseBarePathBlocks(
                 named: "exclude",
                 in: match.body
             )
 
-            let legacyExcludes = parseListManual(
+            let legacyExcludes = parsePathListManual(
                 "exclude",
                 in: match.body
             )
@@ -276,12 +321,18 @@ private extension ConAnyParser {
         for block in blocks {
             let args = parseArgumentMap(block.argument)
 
-            let base = args["from"].flatMap(parseOptionalScalar)
+            let base = try args["from"].flatMap {
+                try parseIncludeBase($0)
+            }
+
             let show = try parseShowStyle(
                 args["show"]
             )
 
-            let entries = parseStringListBody(block.body)
+            let entries = parsePathListBody(
+                block.body
+            )
+
             let split = try splitIncludeEntries(entries)
 
             out.append(
@@ -297,6 +348,44 @@ private extension ConAnyParser {
         return out
     }
 
+    static func hasUnquotedSelectionSuffix(
+        _ raw: String
+    ) -> Bool {
+        var quote: Character?
+        var escaped = false
+
+        for character in raw {
+            if escaped {
+                escaped = false
+                continue
+            }
+
+            if character == "\\" {
+                escaped = true
+                continue
+            }
+
+            if let activeQuote = quote {
+                if character == activeQuote {
+                    quote = nil
+                }
+
+                continue
+            }
+
+            if character == "\"" || character == "'" {
+                quote = character
+                continue
+            }
+
+            if character == "[" {
+                return true
+            }
+        }
+
+        return false
+    }
+
     static func splitIncludeEntries(
         _ entries: [String]
     ) throws -> (includes: [String], selections: [String]) {
@@ -304,11 +393,7 @@ private extension ConAnyParser {
         var selections: [String] = []
 
         for entry in entries {
-            let parsed = try PathSelectionExpressionParser.parse(
-                entry
-            )
-
-            if parsed.content != nil {
+            if hasUnquotedSelectionSuffix(entry) {
                 selections.append(entry)
             } else {
                 includes.append(entry)
@@ -658,7 +743,7 @@ private extension ConAnyParser {
 
     static func parseShowStyle(
         _ raw: String?
-    ) throws -> ConAnyShowStyle {
+    ) throws -> ConPathShowStyle {
         guard let raw else {
             return .full
         }
@@ -697,7 +782,7 @@ private extension ConAnyParser {
 
     static func parseDropFirstShowStyle(
         _ raw: String
-    ) -> ConAnyShowStyle? {
+    ) -> ConPathShowStyle? {
         guard let range = raw.range(
             of: #"^\.?dropFirst\(\s*(\d+)\s*\)$"#,
             options: .regularExpression
@@ -716,7 +801,7 @@ private extension ConAnyParser {
 
     static func parseMiddleEllipsisShowStyle(
         _ raw: String
-    ) -> ConAnyShowStyle? {
+    ) -> ConPathShowStyle? {
         guard raw.range(
             of: #"^\.?middleEllipsis\("#,
             options: .regularExpression
@@ -775,6 +860,62 @@ private extension ConAnyParser {
         return unquoted(trimmed) ?? trimmed
     }
 
+    static func parseIncludeBase(
+        _ raw: String
+    ) throws -> ConInclude? {
+        let trimmed = raw.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
+        guard !trimmed.isEmpty, trimmed != "_" else {
+            return nil
+        }
+
+        if let partition = try parsePartitionIncludeBase(
+            trimmed
+        ) {
+            return .partition(partition)
+        }
+
+        return .path(
+            unquoted(trimmed) ?? trimmed
+        )
+    }
+
+    static func parsePartitionIncludeBase(
+        _ raw: String
+    ) throws -> String? {
+        guard raw.hasPrefix(".partition") else {
+            return nil
+        }
+
+        guard let open = raw.firstIndex(of: "("),
+            let close = raw.lastIndex(of: ")"),
+            open < close
+        else {
+            throw ConAnyParseError.malformed(
+                "Malformed include(from: .partition(...)) value: \(raw)"
+            )
+        }
+
+        let inner = String(
+            raw[raw.index(after: open)..<close]
+        )
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let quoted = unquoted(inner) {
+            return quoted
+        }
+
+        if inner.hasPrefix(".") {
+            return String(
+                inner.dropFirst()
+            )
+        }
+
+        return inner
+    }
+
     static func parseAssignedScalar(
         named key: String,
         in text: String
@@ -797,6 +938,10 @@ private extension ConAnyParser {
 
         let raw = String(text[range])
             .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !raw.hasPrefix("\"\"\"") else {
+            return nil
+        }
 
         return parseOptionalScalar(raw)
     }
@@ -877,7 +1022,68 @@ private extension ConAnyParser {
         )
     }
 
+    static func parseBarePathBlocks(
+        named key: String,
+        in text: String
+    ) -> [String] {
+        guard let blocks = try? findNamedBlocks(
+            named: key,
+            in: text,
+            allowsBareBlock: true
+        ) else {
+            return []
+        }
+
+        return deduplicatedStrings(
+            blocks.flatMap {
+                parsePathListBody($0.body)
+            }
+        )
+    }
+
     static func parseStringListBody(
+        _ body: String
+    ) -> [String] {
+        normalizedListLines(body).compactMap { line -> String? in
+            guard !line.isEmpty,
+                  line != "_",
+                  !line.hasPrefix("#"),
+                  !line.hasPrefix("//")
+            else {
+                return nil
+            }
+
+            return unquoted(line) ?? line
+        }
+    }
+
+    static func parsePathListBody(
+        _ body: String
+    ) -> [String] {
+        normalizedListLines(body).compactMap { line -> String? in
+            guard !line.isEmpty,
+                  line != "_",
+                  !line.hasPrefix("#"),
+                  !line.hasPrefix("//")
+            else {
+                return nil
+            }
+
+            guard let unquoted = unquoted(line) else {
+                return line
+            }
+
+            if unquoted.rangeOfCharacter(
+                from: .whitespacesAndNewlines
+            ) != nil {
+                return line
+            }
+
+            return unquoted
+        }
+    }
+
+    static func normalizedListLines(
         _ body: String
     ) -> [String] {
         body
@@ -889,18 +1095,34 @@ private extension ConAnyParser {
             .map {
                 $0.hasSuffix(",") ? String($0.dropLast()) : $0
             }
-            .compactMap { line -> String? in
-                guard !line.isEmpty, line != "_" else {
-                    return nil
-                }
-
-                return unquoted(line) ?? line
-            }
     }
 
     static func parseListManual(
         _ keyword: String,
         in text: String
+    ) -> [String] {
+        parseListManual(
+            keyword,
+            in: text,
+            bodyParser: parseStringListBody
+        )
+    }
+
+    static func parsePathListManual(
+        _ keyword: String,
+        in text: String
+    ) -> [String] {
+        parseListManual(
+            keyword,
+            in: text,
+            bodyParser: parsePathListBody
+        )
+    }
+
+    static func parseListManual(
+        _ keyword: String,
+        in text: String,
+        bodyParser: (String) -> [String]
     ) -> [String] {
         var out: [String] = []
         var searchIndex = text.startIndex
@@ -927,7 +1149,8 @@ private extension ConAnyParser {
                 at: &cursor
             )
 
-            guard cursor < text.endIndex, text[cursor] == "[" else {
+            guard cursor < text.endIndex,
+                  text[cursor] == "[" else {
                 searchIndex = keywordRange.upperBound
                 continue
             }
@@ -947,7 +1170,7 @@ private extension ConAnyParser {
             )
 
             out.append(
-                contentsOf: parseStringListBody(body)
+                contentsOf: bodyParser(body)
             )
 
             searchIndex = text.index(after: close)

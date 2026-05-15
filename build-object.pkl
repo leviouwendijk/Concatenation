@@ -1,0 +1,19 @@
+uuid = "2D3AF7F8-4C43-4637-8435-952023384C07"
+name = "concatenation"
+types {
+    "binary"
+}
+versions {
+    release {
+        major = 0
+        minor = 1
+        patch = 0
+    }
+}
+compile {
+    use = true
+    arguments { "--targets" "con" }
+}
+details = ""
+author = "levi"
+update = "https://raw.githubusercontent.com/leviouwendijk/Concatenation/master/build-object.pkl"

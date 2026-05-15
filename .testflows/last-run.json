@@ -1,0 +1,25 @@
+{
+  "failed" : 0,
+  "failed_names" : [
+
+  ],
+  "generated_at" : "2026-05-15T09:28:39Z",
+  "passed" : 1,
+  "results" : [
+    {
+      "display_name" : "con-legacy-migration",
+      "duration_seconds" : 0.005714058876037598,
+      "name" : "con-legacy-migration",
+      "status" : "passed",
+      "tags" : [
+        "con",
+        "legacy",
+        "migration",
+        "parser"
+      ]
+    }
+  ],
+  "skipped" : 0,
+  "title" : "Concatenation flow tests",
+  "total" : 1
+}

@@ -30,17 +30,20 @@ public struct LineOptions: Sendable {
 }
 
 public struct OutputOptions: Sendable {
+    public let format: ConcatenationOutputFormat
     public let raw: Bool
     public let relativepaths: Bool
     public let modifiedstamp: Bool
     public let obscurations: [String: String]
 
     public init(
+        format: ConcatenationOutputFormat = .text,
         raw: Bool = false,
         relativepaths: Bool = true,
         modifiedstamp: Bool = false,
         obscurations: [String: String] = [:]
     ) {
+        self.format = format
         self.raw = raw
         self.relativepaths = relativepaths
         self.modifiedstamp = modifiedstamp

@@ -15,6 +15,7 @@ public struct FileConcatenator: SafelyConcatenatable {
     public let context: ConcatenationContext?
 
     public let selectedContentByFile: [URL: [ContentSelection]]
+    public let presentedPathByFile: [URL: String]
 
     public let delimiterStyle: DelimiterStyle
     public let delimiterClosure: Bool
@@ -22,6 +23,7 @@ public struct FileConcatenator: SafelyConcatenatable {
     public let trimBlankLines: Bool
     public let relativePaths: Bool
     public let rawOutput: Bool
+    public let outputFormat: ConcatenationOutputFormat
     public let includeSourceLineNumbers: Bool
     public let includeSourceModifiedAt: Bool
 
@@ -41,6 +43,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         outputURL: URL,
         context: ConcatenationContext? = nil,
         selectedContentByFile: [URL: [ContentSelection]] = [:],
+        presentedPathByFile: [URL: String] = [:],
 
         delimiterStyle: DelimiterStyle = .boxed,
         delimiterClosure: Bool = false,
@@ -48,6 +51,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         trimBlankLines: Bool = true,
         relativePaths: Bool = true,
         rawOutput: Bool = false,
+        outputFormat: ConcatenationOutputFormat = .text,
         includeSourceLineNumbers: Bool = false,
         includeSourceModifiedAt: Bool = false,
         obscureMap: [String: String] = [:],
@@ -66,6 +70,14 @@ public struct FileConcatenator: SafelyConcatenatable {
         self.outputURL = outputURL
         self.context = context
         self.selectedContentByFile = selectedContentByFile
+        self.presentedPathByFile = Dictionary(
+            uniqueKeysWithValues: presentedPathByFile.map {
+                (
+                    $0.key.standardizedFileURL,
+                    $0.value
+                )
+            }
+        )
 
         self.delimiterStyle = delimiterStyle
         self.delimiterClosure = delimiterClosure
@@ -73,6 +85,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         self.trimBlankLines = trimBlankLines
         self.relativePaths = relativePaths
         self.rawOutput = rawOutput
+        self.outputFormat = outputFormat
         self.includeSourceLineNumbers = includeSourceLineNumbers
         self.includeSourceModifiedAt = includeSourceModifiedAt
         self.obscureMap = obscureMap
@@ -92,10 +105,13 @@ public struct FileConcatenator: SafelyConcatenatable {
         ConcatenationPlan(
             context: context,
             sources: inputFiles.map { file in
-                ConcatenationSource(
-                    file: file,
+                let standardized = file.standardizedFileURL
+
+                return ConcatenationSource(
+                    file: standardized,
+                    presentedPath: presentedPathByFile[standardized],
                     selections: selections(
-                        for: file.standardizedFileURL
+                        for: standardized
                     )
                 )
             },
@@ -180,7 +196,8 @@ public struct FileConcatenator: SafelyConcatenatable {
                 )
 
                 let section = try makeSection(
-                    for: resolved,
+                    for: source,
+                    resolved: resolved,
                     fileManager: fileManager
                 )
 
@@ -305,6 +322,7 @@ private extension FileConcatenator {
                 numbers: includeSourceLineNumbers
             ),
             output: .init(
+                format: outputFormat,
                 raw: rawOutput,
                 relativepaths: relativePaths,
                 modifiedstamp: includeSourceModifiedAt,
@@ -316,10 +334,21 @@ private extension FileConcatenator {
     func render(
         _ document: ConcatenationDocument
     ) -> ConcatenationRenderResult {
-        let text = ConcatenationRenderer(
-            outputURL: outputURL,
-            options: options
-        ).render(document)
+        let text: String
+
+        switch options.output.format {
+        case .text:
+            text = ConcatenationRenderer(
+                outputURL: outputURL,
+                options: options
+            ).render(document)
+
+        case .xml:
+            text = ConcatenationXMLRenderer(
+                outputURL: outputURL,
+                options: options
+            ).render(document)
+        }
 
         return .init(
             document: document,
@@ -328,7 +357,8 @@ private extension FileConcatenator {
     }
 
     func makeSection(
-        for resolved: URL,
+        for source: ConcatenationSource,
+        resolved: URL,
         fileManager: FileManager
     ) throws -> ConcatenationSection {
         let readResult = try LineReader(resolved).read(
@@ -377,10 +407,16 @@ private extension FileConcatenator {
 
         return ConcatenationSection(
             file: resolved,
-            headerLabel: makeHeaderLabel(
-                for: resolved,
-                fileManager: fileManager
-            ),
+            presentedPath: source.presentedPath
+                ?? displayPath(
+                    for: resolved,
+                    fileManager: fileManager
+                ),
+            modifiedAt: options.output.modifiedstamp
+                ? sourceModifiedAtString(
+                    for: resolved
+                )
+                : nil,
             slices: slices,
             blankLineHeader: blankWarnings.header,
             blankLineFooter: blankWarnings.footer,
@@ -503,25 +539,6 @@ private extension FileConcatenator {
         }
 
         return resolved.path
-    }
-
-    private func makeHeaderLabel(
-        for resolved: URL,
-        fileManager: FileManager
-    ) -> String {
-        let path = displayPath(
-            for: resolved,
-            fileManager: fileManager
-        )
-
-        guard options.output.modifiedstamp,
-              let modifiedAt = sourceModifiedAtString(
-                for: resolved
-              ) else {
-            return path
-        }
-
-        return "\(path) [modified_at: \(modifiedAt)]"
     }
 
     private func sourceModifiedAtString(

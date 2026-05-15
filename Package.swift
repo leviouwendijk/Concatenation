@@ -11,7 +11,16 @@ let package = Package(
     products: [
         .library(
             name: "Concatenation",
-            targets: ["Concatenation"]),
+            targets: ["Concatenation"]
+        ),
+        .executable(
+            name: "con",
+            targets: ["con"]
+        ),
+        .executable(
+            name: "contest",
+            targets: ["ConcatenationTestFlows"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/leviouwendijk/Primitives.git", branch: "master"),
@@ -24,6 +33,9 @@ let package = Package(
         .package(url: "https://github.com/leviouwendijk/Writers.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Readers.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Selection.git", branch: "master"),
+        .package(url: "https://github.com/leviouwendijk/Partition.git", branch: "master"),
+        .package(url: "https://github.com/leviouwendijk/Arguments.git", branch: "master"),
+        .package(url: "https://github.com/leviouwendijk/TestFlows.git", branch: "master"),
     ],
     targets: [
         .target(
@@ -41,15 +53,27 @@ let package = Package(
                 .product(name: "Readers", package: "Readers"),
                 .product(name: "Selection", package: "Selection"),
                 .product(name: "SelectionParsing", package: "Selection"),
+                .product(name: "Partition", package: "Partition"),
+                .product(name: "Arguments", package: "Arguments"),
             ],
             // resources: [
             //     .process("Resources")
             // ],
         ),
-        .testTarget(
-            name: "ConcatenationTests",
+        .executableTarget(
+            name: "con",
             dependencies: [
-                "Concatenation",
+                .target(name: "Concatenation"),
+                .product(name: "Arguments", package: "Arguments"),
+                .product(name: "Terminal", package: "Terminal")
+            ],
+            path: "Sources/ConcatenatorCLI"
+        ),
+        .executableTarget(
+            name: "ConcatenationTestFlows",
+            dependencies: [
+                .target(name: "Concatenation"),
+                .product(name: "TestFlows", package: "TestFlows"),
             ]
         ),
     ]
