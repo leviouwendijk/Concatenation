@@ -1,11 +1,11 @@
 import Foundation
 
 public struct ConcatenationXMLRenderer: Sendable {
-    public let outputURL: URL
+    public let outputURL: URL?
     public let options: ConcatenationRenderOptions
 
     public init(
-        outputURL: URL,
+        outputURL: URL?,
         options: ConcatenationRenderOptions
     ) {
         self.outputURL = outputURL
@@ -18,7 +18,14 @@ public struct ConcatenationXMLRenderer: Sendable {
         var lines: [String] = []
 
         lines.append(#"<?xml version="1.0" encoding="UTF-8"?>"#)
-        lines.append(#"<concatenation output="\#(xml(outputURL.path))">"#)
+
+        if let outputURL {
+            lines.append(
+                #"<concatenation output="\#(xml(outputURL.path))">"#
+            )
+        } else {
+            lines.append("<concatenation>")
+        }
 
         if let context = document.context,
            !options.output.raw {

@@ -2,11 +2,11 @@ import Foundation
 import Position
 
 public struct ConcatenationRenderer: Sendable {
-    public let outputURL: URL
+    public let outputURL: URL?
     public let options: ConcatenationRenderOptions
 
     public init(
-        outputURL: URL,
+        outputURL: URL?,
         options: ConcatenationRenderOptions
     ) {
         self.outputURL = outputURL

@@ -1,7 +1,6 @@
 import Arguments
 import Concatenation
 import Foundation
-import IO
 
 enum ConcatAnyCommand: ArgumentCommand {
     static let name = "any"
@@ -14,6 +13,7 @@ enum ConcatAnyCommand: ArgumentCommand {
         [
             ConcatAnyInitCommand.self,
             ConcatAnyRunCommand.self,
+            ConcatAnyCopyCommand.self,
         ]
     }
 
@@ -45,9 +45,14 @@ enum ConcatAnyInitCommand: RunnableArgumentCommand {
             try initializer.initialize(
                 force: try invocation.flag("force")
             )
-            print(".conany created.")
+
+            print(
+                ".conany created."
+            )
         } catch ConAnyInitError.alreadyExists {
-            print(".conany already exists. Use --force to overwrite.")
+            print(
+                ".conany already exists. Use --force to overwrite."
+            )
         }
     }
 }
@@ -66,329 +71,225 @@ enum ConcatAnyRunCommand: RunnableArgumentCommand {
                 "verbose",
                 help: "Verbose resolution."
             ),
-        ] + ConcatOptions.components()
+        ] + ConcatOptions.components(
+            includeCopy: false
+        )
     }
 
     static func run(
         _ invocation: ParsedInvocation
     ) async throws {
         let options = try ConcatOptions.parse(
-            invocation
+            invocation,
+            includeCopy: false
         )
 
-        try await runConAny(
-            configPath: try invocation.value(
+        let cwd = currentConAnyDirectory()
+
+        let configURL = resolvedConAnyConfig(
+            try invocation.value(
                 "config",
                 as: String.self
             ),
-            options: options,
-            verbose: try invocation.flag(
-                "verbose"
+            cwd: cwd
+        )
+
+        let ignoreMap = try conAnyIgnoreMap(
+            configDirectory: configURL
+                .deletingLastPathComponent(),
+            cwd: cwd,
+            extraFiles: options.excludeFiles,
+            extraDirectories: options.excludeDirs
+        )
+
+        let verboseResolution = try invocation.flag(
+            "verbose"
+        )
+
+        let execution = try ConAnyExecution(
+            configURL: configURL,
+            options: .init(
+                maxDepth: options.allSubdirectories
+                    ? nil
+                    : options.depth,
+                includeDotfiles: options.includeDotFiles,
+                ignoreMap: ignoreMap,
+                delimiterStyle: options.delimiterStyle,
+                delimiterClosure: options.delimiterClosure,
+                maxLinesPerFile: options.limit(),
+                rawOutput: options.rawOutput,
+                outputFormat: options.outputFormat,
+                includeSourceLineNumbers: options.includeSourceLineNumbers,
+                includeSourceModifiedAt: options.includeSourceModifiedAt,
+                verboseResolution: verboseResolution,
+                verboseOutput: options.verboseOutput,
+                protectSecrets: true,
+                allowSecrets: options.allowSecrets,
+                failOnBlockedFiles: false,
+                deepSecretInspection: options.deepInspect
             )
         )
+
+        let result = try await execution.write()
+
+        for skipped in result.skipped {
+            print(
+                "No files matched block → \(skipped.name)"
+            )
+        }
+
+        for output in result.outputs {
+            printSuccess(
+                outputPath: output.resolved.outputURL.path,
+                totalLines: output.result.renderedLineCount
+            )
+        }
+
+        if verboseResolution || options.verboseOutput {
+            printContextIndexAction(
+                result.contextIndexAction
+            )
+        }
+
+        if execution.configuration.renderables.count > 1 {
+            print(
+                "Done. Blocks: "
+                    + "\(execution.configuration.renderables.count), "
+                    + "total lines: "
+                    + "\(result.totalLineCount)."
+            )
+        }
     }
 }
 
-func runConAny(
-    configPath: String?,
-    options: ConcatOptions,
-    verbose: Bool
-) async throws {
-    let cwd = FileManager.default.currentDirectoryPath
-    let cfgURL = URL(
-        fileURLWithPath: configPath ?? "\(cwd)/.conany"
-    ).standardizedFileURL
-
-    let cfg = try ConAnyParser.parseFile(
-        at: cfgURL
+func currentConAnyDirectory() -> URL {
+    URL(
+        fileURLWithPath:
+            FileManager.default.currentDirectoryPath,
+        isDirectory: true
     )
+    .standardizedFileURL
+}
 
-    let workspace = ConcatenationWorkspace(
-        configuration: cfgURL
-    )
-
-    let finalMap: IgnoreMap
-    if let parsed = try? ConignoreParser.parseFile(
-        at: URL(fileURLWithPath: cwd + "/.conignore")
-    ) {
-        finalMap = try IgnoreMap(
-            ignoreFiles: parsed.ignoreFiles + options.excludeFiles,
-            ignoreDirectories: parsed.ignoreDirectories + options.excludeDirs,
-            obscureValues: parsed.obscureValues
-        )
-    } else {
-        finalMap = try IgnoreMap(
-            ignoreFiles: options.excludeFiles,
-            ignoreDirectories: options.excludeDirs,
-            obscureValues: [:]
-        )
+func resolvedConAnyConfig(
+    _ raw: String?,
+    cwd: URL
+) -> URL {
+    guard let raw else {
+        return cwd
+            .appendingPathComponent(
+                ".conany",
+                isDirectory: false
+            )
+            .standardizedFileURL
     }
 
-    let resolver = ConAnyResolver(
-        baseDir: cfgURL.deletingLastPathComponent().path
-    )
+    let expanded = NSString(
+        string: raw
+    ).expandingTildeInPath
 
-    var collectedContexts: [String] = []
-
-    let containsContexts = cfg.renderables.contains {
-        $0.context != nil
+    if expanded.hasPrefix("/") {
+        return URL(
+            fileURLWithPath: expanded
+        )
+        .standardizedFileURL
     }
 
-    if containsContexts {
-        let signature = """
-        // type: autogenerated
-        // signature: concatenator
-        """
-
-        collectedContexts.append(signature)
-    }
-
-    var totalLinesAll = 0
-    var refreshContextIndex = false
-
-    for renderable in cfg.renderables {
-        let matches = try resolver.resolveMatches(
-            renderable,
-            maxDepth: options.allSubdirectories ? nil : options.depth,
-            includeDotfiles: options.includeDotFiles,
-            ignoreMap: finalMap,
-            verbose: verbose
+    return cwd
+        .appendingPathComponent(
+            expanded,
+            isDirectory: false
         )
+        .standardizedFileURL
+}
 
-        let urls = matches.map(\.url)
+func conAnyIgnoreMap(
+    configDirectory: URL,
+    cwd: URL,
+    extraFiles: [String] = [],
+    extraDirectories: [String] = []
+) throws -> IgnoreMap {
+    let candidates = [
+        configDirectory.standardizedFileURL,
+        cwd.standardizedFileURL,
+    ]
 
-        let selectedContentByFile = Dictionary(
-            uniqueKeysWithValues: matches.map {
-                (
-                    $0.url.standardizedFileURL,
-                    $0.contentSelections
-                )
-            }
-        )
+    var seen: Set<URL> = []
 
-        let presentedPathByFile = Dictionary(
-            uniqueKeysWithValues: matches.map { match in
-                (
-                    match.url.standardizedFileURL,
-                    resolver.presentedPath(
-                        for: match.url,
-                        in: renderable
-                    )
-                )
-            }
-        )
+    for directory in candidates {
+        let ignore = directory
+            .appendingPathComponent(
+                ".conignore",
+                isDirectory: false
+            )
+            .standardizedFileURL
 
-        guard !urls.isEmpty else {
-            print("No files matched block → \(renderable.output)")
+        guard seen.insert(
+            ignore
+        ).inserted else {
             continue
         }
 
-        let outURL = resolver.outputURL(
-            for: renderable
-        )
-
-        let location = "con any block '\(renderable.output)' → \(outURL.path)"
-
-        if let context = renderable.context {
-            let header = context.object(
-                outputURL: outURL
-            )
-            collectedContexts.append(header)
+        guard FileManager.default.fileExists(
+            atPath: ignore.path
+        ) else {
+            continue
         }
 
-        let concatenator = FileConcatenator(
-            inputFiles: urls,
-            outputURL: outURL,
-            context: renderable.context,
-            workspace: workspace,
-            selectedContentByFile: selectedContentByFile,
-            presentedPathByFile: presentedPathByFile,
-
-            delimiterStyle: options.delimiterStyle,
-            delimiterClosure: options.delimiterClosure,
-            maxLinesPerFile: options.limit(),
-            trimBlankLines: true,
-            relativePaths: false,
-            rawOutput: options.rawOutput,
-            outputFormat: options.outputFormat,
-            includeSourceLineNumbers: options.includeSourceLineNumbers,
-            includeSourceModifiedAt: options.includeSourceModifiedAt,
-            obscureMap: finalMap.obscureValues,
-
-            copyToClipboard: options.copyToClipboard,
-            verbose: options.verboseOutput,
-
-            location: location,
-            allowSecrets: options.allowSecrets,
-            deepSecretInspection: options.deepInspect
+        let parsed = try ConignoreParser.parseFile(
+            at: ignore
         )
 
-        let result = try await concatenator.write(
-            concurrency: .automatic
-        )
-
-        totalLinesAll += result.renderedLineCount
-
-        if result.performedWrite {
-            refreshContextIndex = true
-        }
-
-        printSuccess(
-            outputPath: outURL.path,
-            totalLines: result.renderedLineCount
+        return try IgnoreMap(
+            ignoreFiles:
+                parsed.ignoreFiles
+                + extraFiles,
+            ignoreDirectories:
+                parsed.ignoreDirectories
+                + extraDirectories,
+            obscureValues:
+                parsed.obscureValues
         )
     }
 
-    try writeContextIndexIfNeeded(
-        collectedContexts: collectedContexts,
-        configURL: cfgURL,
-        refresh: refreshContextIndex,
-        verbose: verbose
+    return try IgnoreMap(
+        ignoreFiles: extraFiles,
+        ignoreDirectories: extraDirectories,
+        obscureValues: [:]
     )
-
-    if cfg.renderables.count > 1 {
-        print("Done. Blocks: \(cfg.renderables.count), total lines: \(totalLinesAll).")
-    }
 }
 
-private func writeContextIndexIfNeeded(
-    collectedContexts: [String],
-    configURL: URL,
-    refresh: Bool,
-    verbose: Bool
-) throws {
-    let contextsURL = configURL
-        .deletingLastPathComponent()
-        .appendingPathComponent("context_index.txt")
+func printContextIndexAction(
+    _ action: ConAnyContextIndexAction
+) {
+    switch action {
+    case .none:
+        break
 
-    let exists = FileManager.default.fileExists(
-        atPath: contextsURL.path
-    )
-
-    if collectedContexts.isEmpty {
-        guard exists else {
-            return
-        }
-
-        let text = try String(
-            contentsOf: contextsURL,
-            encoding: .utf8
-        )
-
-        guard isConcatenatorSigned(
-            text: text
-        ) else {
-            return
-        }
-
-        try FileSystem.default.remove(
-            contextsURL
-        )
-
-        if verbose {
-            print(
-                "Removed obsolete autogenerated contexts at \(contextsURL.path)"
-            )
-        }
-
-        return
-    }
-
-    let contextsJoined = collectedContexts.joined(
-        separator: "\n\n"
-    )
-
-    if exists {
-        let text = try String(
-            contentsOf: contextsURL,
-            encoding: .utf8
-        )
-
-        guard isConcatenatorSigned(
-            text: text
-        ) else {
-            if verbose {
-                print(
-                    "Skipping contexts write: \(contextsURL.path) exists and appears manually maintained."
-                )
-            }
-
-            return
-        }
-
-        let materialChanged = contextIndexMaterial(
-            text
-        ) != contextIndexMaterial(
-            contextsJoined
-        )
-
-        guard refresh || materialChanged else {
-            if verbose {
-                print(
-                    "Unchanged autogenerated contexts at \(contextsURL.path)"
-                )
-            }
-
-            return
-        }
-
-        try contextsJoined.write(
-            to: contextsURL,
-            atomically: true,
-            encoding: .utf8
-        )
-
-        if verbose {
-            print(
-                "Overwrote autogenerated contexts at \(contextsURL.path)"
-            )
-        }
-
-        return
-    }
-
-    try contextsJoined.write(
-        to: contextsURL,
-        atomically: true,
-        encoding: .utf8
-    )
-
-    if verbose {
+    case .written(let url):
         print(
-            "Wrote contexts to \(contextsURL.path)"
+            "Wrote contexts to \(url.path)"
+        )
+
+    case .overwritten(let url):
+        print(
+            "Overwrote autogenerated contexts at \(url.path)"
+        )
+
+    case .removed(let url):
+        print(
+            "Removed obsolete autogenerated contexts at \(url.path)"
+        )
+
+    case .skippedManual(let url):
+        print(
+            "Skipping contexts write: "
+                + "\(url.path) exists and appears manually maintained."
+        )
+
+    case .unchanged(let url):
+        print(
+            "Unchanged autogenerated contexts at \(url.path)"
         )
     }
-}
-
-private func contextIndexMaterial(
-    _ text: String
-) -> String {
-    text.replacingOccurrences(
-        of: #""generated_at"\s*:\s*"[^"]*""#,
-        with: #""generated_at" : "<generated_at>""#,
-        options: .regularExpression
-    )
-}
-
-private func isConcatenatorSigned(
-    text: String
-) -> Bool {
-    let firstLines = text
-        .split(separator: "\n", omittingEmptySubsequences: false)
-        .prefix(10)
-        .map(String.init)
-
-    let hasTypeMarker = firstLines.contains {
-        $0.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        ) == "// type: autogenerated"
-    }
-
-    let hasSignature = firstLines.contains {
-        $0.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        ) == "// signature: concatenator"
-    }
-
-    return hasTypeMarker && hasSignature
 }

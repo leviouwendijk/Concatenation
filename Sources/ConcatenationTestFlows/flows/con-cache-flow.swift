@@ -15,6 +15,57 @@ extension ConcatenationFlowSuite {
                 "incremental",
             ]
         ) {
+            Step("render-only concatenation requires no output artifact") {
+                let fixture = try ConcatenationCacheFixture(
+                    "render-only"
+                )
+
+                defer {
+                    fixture.remove()
+                }
+
+                try fixture.writeSource(
+                    """
+                    alpha
+                    beta
+                    gamma
+                    """
+                )
+
+                let concatenator = FileConcatenator(
+                    inputFiles: [
+                        fixture.source,
+                    ],
+                    delimiterStyle: .comment,
+                    trimBlankLines: true,
+                    includeSourceLineNumbers: true,
+                    protectSecrets: false
+                )
+
+                let rendered = try concatenator.render()
+
+                try Expect.true(
+                    rendered.text.contains(
+                        "1 | alpha"
+                    ),
+                    "cache.render-only-line-numbers"
+                )
+
+                try Expect.true(
+                    rendered.text.contains(
+                        "# "
+                    ),
+                    "cache.render-only-comment-delimiter"
+                )
+
+                try Expect.true(
+                    !FileSystem.default.exists(
+                        fixture.output
+                    ),
+                    "cache.render-only-no-artifact"
+                )
+            }
+
             Step("workspace maps internal and external cache manifests") {
                 let fixture = try ConcatenationCacheFixture(
                     "workspace"

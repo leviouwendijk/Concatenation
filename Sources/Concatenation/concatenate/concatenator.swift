@@ -12,7 +12,7 @@ import Selection
 
 public struct FileConcatenator: SafelyConcatenatable {
     public let inputFiles: [URL]
-    public let outputURL: URL
+    public let outputURL: URL?
     public let context: ConcatenationContext?
     public let workspace: ConcatenationWorkspace?
 
@@ -42,7 +42,7 @@ public struct FileConcatenator: SafelyConcatenatable {
 
     public init(
         inputFiles: [URL],
-        outputURL: URL,
+        outputURL: URL? = nil,
         context: ConcatenationContext? = nil,
         workspace: ConcatenationWorkspace? = nil,
         selectedContentByFile: [URL: [ContentSelection]] = [:],
@@ -143,15 +143,18 @@ public struct FileConcatenator: SafelyConcatenatable {
         concurrency: IOConcurrency,
         persistCache: Bool
     ) async throws -> ConcatenationPreparedDocument {
-        let cacheStore = workspace.map {
-            ConcatenationCacheStore(
-                workspace: $0
-            )
-        }
+        let cachedManifest: ConcatenationCacheManifest?
 
-        let cachedManifest = try cacheStore?.load(
-            for: outputURL
-        )
+        if let workspace,
+           let outputURL {
+            cachedManifest = try ConcatenationCacheStore(
+                workspace: workspace
+            ).load(
+                for: outputURL
+            )
+        } else {
+            cachedManifest = nil
+        }
 
         let preinspected = try await preinspectSources(
             concurrency: concurrency
@@ -213,20 +216,28 @@ public struct FileConcatenator: SafelyConcatenatable {
         var preloadedSections = initialPreloadedSections
         var prereads = initialPrereads
 
-        let cacheStore = workspace.map {
-            ConcatenationCacheStore(
-                workspace: $0
+        let cacheStore: ConcatenationCacheStore?
+
+        if let workspace,
+           outputURL != nil {
+            cacheStore = ConcatenationCacheStore(
+                workspace: workspace
             )
+        } else {
+            cacheStore = nil
         }
 
         let cachedManifest: ConcatenationCacheManifest?
 
         if let providedCachedManifest {
             cachedManifest = providedCachedManifest
-        } else {
-            cachedManifest = try cacheStore?.load(
+        } else if let cacheStore,
+                  let outputURL {
+            cachedManifest = try cacheStore.load(
                 for: outputURL
             )
+        } else {
+            cachedManifest = nil
         }
 
         var cachedSourcesByFile: [
@@ -593,15 +604,18 @@ public struct FileConcatenator: SafelyConcatenatable {
             safeguards: cachedSafeguards
         )
 
-        let preparedCacheManifest = cacheStore.map {
-            _ in
+        let preparedCacheManifest: ConcatenationCacheManifest?
 
-            ConcatenationCacheManifest(
+        if cacheStore != nil,
+           let outputURL {
+            preparedCacheManifest = ConcatenationCacheManifest(
                 output: outputURL,
                 sources: cachedSources,
                 safeguards: cachedSafeguards,
                 artifact: cachedManifest?.artifact
             )
+        } else {
+            preparedCacheManifest = nil
         }
 
         if persistCache,
@@ -653,11 +667,60 @@ public struct FileConcatenator: SafelyConcatenatable {
 
     public func render() throws -> ConcatenationRenderResult {
         let document = try document()
-        return render(document)
+
+        return render(
+            document
+        )
+    }
+
+    public func render(
+        concurrency: IOConcurrency
+    ) async throws -> ConcatenationRenderResult {
+        let document = try await document(
+            concurrency: concurrency
+        )
+
+        return render(
+            document
+        )
+    }
+
+    @discardableResult
+    public func copy() throws -> ConcatenationRenderResult {
+        let rendered = try render()
+
+        printWarnings(
+            from: rendered.document
+        )
+
+        return copy(
+            rendered
+        )
+    }
+
+    @discardableResult
+    public func copy(
+        concurrency: IOConcurrency
+    ) async throws -> ConcatenationRenderResult {
+        let rendered = try await render(
+            concurrency: concurrency
+        )
+
+        printWarnings(
+            from: rendered.document
+        )
+
+        return copy(
+            rendered
+        )
     }
 
     @discardableResult
     public func write() throws -> ConcatenationWriteResult {
+        guard let outputURL else {
+            throw ConcatError.outputRequired
+        }
+
         if verbose {
             if let location {
                 print("Concatenation location: \(location)")
@@ -716,11 +779,9 @@ public struct FileConcatenator: SafelyConcatenatable {
         )
 
         if copyToClipboard {
-            rendered.text.clipboard()
-
-            if verbose {
-                print("Copied output to clipboard")
-            }
+            copy(
+                rendered
+            )
         }
 
         if verbose {
@@ -742,6 +803,10 @@ public struct FileConcatenator: SafelyConcatenatable {
     public func write(
         concurrency: IOConcurrency
     ) async throws -> ConcatenationWriteResult {
+        guard let outputURL else {
+            throw ConcatError.outputRequired
+        }
+
         if verbose {
             if let location {
                 print("Concatenation location: \(location)")
@@ -820,13 +885,9 @@ public struct FileConcatenator: SafelyConcatenatable {
         )
 
         if copyToClipboard {
-            rendered.text.clipboard()
-
-            if verbose {
-                print(
-                    "Copied output to clipboard"
-                )
-            }
+            copy(
+                rendered
+            )
         }
 
         if verbose {
@@ -1048,6 +1109,21 @@ private extension FileConcatenator {
             document: document,
             text: text
         )
+    }
+
+    @discardableResult
+    func copy(
+        _ rendered: ConcatenationRenderResult
+    ) -> ConcatenationRenderResult {
+        rendered.text.clipboard()
+
+        if verbose {
+            print(
+                "Copied output to clipboard"
+            )
+        }
+
+        return rendered
     }
 
     func readSource(
@@ -1359,6 +1435,7 @@ private extension FileConcatenator {
         Int: ConcatenationSection
     ] {
         guard let workspace,
+              let outputURL,
               let cachedManifest else {
             return [:]
         }
@@ -1467,8 +1544,6 @@ private extension FileConcatenator {
                 )
             )
         }
-
-        let outputURL = outputURL
 
         let completed = try await IOExecutor(
             concurrency: concurrency
@@ -1788,7 +1863,8 @@ private extension FileConcatenator {
         _ source: ConcatenationCachedSource,
         from cacheStore: ConcatenationCacheStore?
     ) throws -> ConcatenationSection? {
-        guard let cacheStore else {
+        guard let cacheStore,
+              let outputURL else {
             return nil
         }
 
@@ -1803,7 +1879,8 @@ private extension FileConcatenator {
         source: ConcatenationCachedSource,
         to cacheStore: ConcatenationCacheStore?
     ) throws {
-        guard let cacheStore else {
+        guard let cacheStore,
+              let outputURL else {
             return
         }
 
@@ -1844,6 +1921,10 @@ private extension FileConcatenator {
     func artifactMaterialFingerprint(
         for document: ConcatenationDocument
     ) throws -> ContentFingerprint {
+        guard let outputURL else {
+            throw ConcatError.outputRequired
+        }
+
         guard let sourceMaterialFingerprint =
             document.sourceMaterialFingerprint
         else {
@@ -1902,7 +1983,8 @@ private extension FileConcatenator {
     func validatedCachedArtifact(
         materialFingerprint: ContentFingerprint
     ) throws -> ConcatenationCachedArtifact? {
-        guard let workspace else {
+        guard let workspace,
+              let outputURL else {
             return nil
         }
 
@@ -1944,6 +2026,10 @@ private extension FileConcatenator {
         materialFingerprint: ContentFingerprint,
         manifest: ConcatenationCacheManifest?
     ) throws -> ConcatenationCachedArtifact? {
+        guard let outputURL else {
+            return nil
+        }
+
         guard let artifact = manifest?.artifact,
               artifact.materialFingerprint == materialFingerprint else {
             return nil
@@ -1997,7 +2083,8 @@ private extension FileConcatenator {
         renderedText: String,
         materialFingerprint: ContentFingerprint
     ) throws {
-        guard let workspace else {
+        guard let workspace,
+              let outputURL else {
             return
         }
 
@@ -2030,6 +2117,10 @@ private extension FileConcatenator {
         renderedText: String,
         materialFingerprint: ContentFingerprint
     ) throws -> ConcatenationCachedArtifact {
+        guard let outputURL else {
+            throw ConcatError.outputRequired
+        }
+
         let metadata = try FileInspector(
             outputURL
         ).inspect()

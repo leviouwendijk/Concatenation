@@ -66,7 +66,7 @@ public struct ConcatenationContext: Sendable, Codable, Equatable {
     }
 
     public func header(
-        outputURL: URL
+        outputURL: URL?
     ) -> String {
         let iso = ISO8601DateFormatter().string(from: Date())
 
@@ -88,7 +88,17 @@ public struct ConcatenationContext: Sendable, Codable, Equatable {
             pairs.append(("concatenated_file", jsonEncodedString(cf)))
         }
 
-        pairs.append(("output", jsonEncodedString(outputURL.path)))
+        if let outputURL {
+            pairs.append(
+                (
+                    "output",
+                    jsonEncodedString(
+                        outputURL.path
+                    )
+                )
+            )
+        }
+
         pairs.append(("generated_at", jsonEncodedString(iso)))
 
         var lines: [String] = []

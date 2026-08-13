@@ -5,6 +5,8 @@ enum ConcatenationFlowSuite: TestFlowRegistry {
 
     static let flows: [TestFlow] = [
         conLegacyMigrationFlow,
+        conAnyNestingFlow,
+        conAnyExecutionFlow,
         conCacheFlow,
         conCacheStressFlow,
     ]

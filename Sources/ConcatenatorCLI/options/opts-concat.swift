@@ -39,8 +39,10 @@ struct ConcatOptions: Sendable {
 }
 
 extension ConcatOptions {
-    static func components() -> [CommandComponentLowerable] {
-        [
+    static func components(
+        includeCopy: Bool = true
+    ) -> [CommandComponentLowerable] {
+        var components: [CommandComponentLowerable] = [
             opt(
                 "output",
                 short: "o",
@@ -138,11 +140,6 @@ extension ConcatOptions {
                 help: "Include source file modification timestamp."
             ),
             flag(
-                "copy",
-                short: "c",
-                help: "Copy the output to clipboard."
-            ),
-            flag(
                 "exclude-static-ignores",
                 short: "e",
                 help: "Exclude the statically ignored files."
@@ -158,12 +155,34 @@ extension ConcatOptions {
                 help: "Turn off deep inspection for file protection."
             ),
         ]
+
+        if includeCopy {
+            components.append(
+                flag(
+                    "copy",
+                    short: "c",
+                    help: "Copy the output to clipboard."
+                )
+            )
+        }
+
+        return components
     }
 
     static func parse(
-        _ invocation: ParsedInvocation
+        _ invocation: ParsedInvocation,
+        includeCopy: Bool = true
     ) throws -> Self {
         let cwd = FileManager.default.currentDirectoryPath
+
+        let copyToClipboard: Bool
+        if includeCopy {
+            copyToClipboard = try invocation.flag(
+                "copy"
+            )
+        } else {
+            copyToClipboard = false
+        }
 
         return .init(
             outputFileName: try invocation.value(
@@ -239,9 +258,7 @@ extension ConcatOptions {
                 "modified-at",
                 default: true
             ),
-            copyToClipboard: try invocation.flag(
-                "copy"
-            ),
+            copyToClipboard: copyToClipboard,
             excludeStaticIgnores: try invocation.flag(
                 "exclude-static-ignores"
             ),

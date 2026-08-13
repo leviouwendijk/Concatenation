@@ -8,6 +8,7 @@ public enum ConcatError: Error, LocalizedError {
     case fileReadFailed(url: URL, stage: String, underlying: Error)    
     case fileProcessingFailed(url: URL, stage: String, underlying: Error) 
     case fileBlockedByPolicy(url: URL, reason: String)
+    case outputRequired
 
     public var errorDescription: String? {
         switch self {
@@ -25,6 +26,9 @@ public enum ConcatError: Error, LocalizedError {
             return "Error processing file '\(url.path)' at '\(stage)': \(underlying.localizedDescription)"
         case .fileBlockedByPolicy(let url, let reason):
             return "File blocked by safeguard policy: \(url.path) — \(reason)"
+
+        case .outputRequired:
+            return "An output URL is required to write concatenation output."
         }
     }
 }

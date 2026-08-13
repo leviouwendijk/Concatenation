@@ -10,6 +10,7 @@ enum ConcatCommand: ArgumentCommand {
     static var children: [ArgumentCommandType] {
         [
             ConcatRunCommand.self,
+            ConcatCopyCommand.self,
             ConcatAnyCommand.self,
         ]
     }
