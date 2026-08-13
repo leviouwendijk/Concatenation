@@ -138,16 +138,75 @@ public struct ConAnyWrittenOutput {
     }
 }
 
+public struct ConAnyResolutionStatistics:
+    Sendable,
+    Equatable
+{
+    public let duration: TimeInterval
+    public let scanRequestCount: Int
+    public let plannedTraversalCount: Int
+    public let uniqueRoots: [URL]
+    public let matchedOutputCount: Int
+    public let unmatchedOutputCount: Int
+
+    public init(
+        duration: TimeInterval = 0,
+        scanRequestCount: Int = 0,
+        plannedTraversalCount: Int = 0,
+        uniqueRoots: [URL] = [],
+        matchedOutputCount: Int = 0,
+        unmatchedOutputCount: Int = 0
+    ) {
+        self.duration = duration
+        self.scanRequestCount = scanRequestCount
+        self.plannedTraversalCount = plannedTraversalCount
+
+        self.uniqueRoots = Array(
+            Set(
+                uniqueRoots.map(
+                    \.standardizedFileURL
+                )
+            )
+        )
+        .sorted {
+            $0.path < $1.path
+        }
+
+        self.matchedOutputCount = matchedOutputCount
+        self.unmatchedOutputCount = unmatchedOutputCount
+    }
+
+    public var uniqueRootCount: Int {
+        uniqueRoots.count
+    }
+}
+
+public struct ConAnyResolvedBatch {
+    public let outputs: [ConAnyResolvedOutput]
+    public let statistics: ConAnyResolutionStatistics
+
+    public init(
+        outputs: [ConAnyResolvedOutput],
+        statistics: ConAnyResolutionStatistics
+    ) {
+        self.outputs = outputs
+        self.statistics = statistics
+    }
+}
+
 public struct ConAnyRenderBatchResult {
     public let outputs: [ConAnyRenderedOutput]
     public let skipped: [ConAnyResolvedOutput]
+    public let resolution: ConAnyResolutionStatistics
 
     public init(
         outputs: [ConAnyRenderedOutput],
-        skipped: [ConAnyResolvedOutput]
+        skipped: [ConAnyResolvedOutput],
+        resolution: ConAnyResolutionStatistics = .init()
     ) {
         self.outputs = outputs
         self.skipped = skipped
+        self.resolution = resolution
     }
 
     public var outputCount: Int {
@@ -210,15 +269,18 @@ public struct ConAnyWriteBatchResult {
     public let outputs: [ConAnyWrittenOutput]
     public let skipped: [ConAnyResolvedOutput]
     public let contextIndexAction: ConAnyContextIndexAction
+    public let resolution: ConAnyResolutionStatistics
 
     public init(
         outputs: [ConAnyWrittenOutput],
         skipped: [ConAnyResolvedOutput],
-        contextIndexAction: ConAnyContextIndexAction
+        contextIndexAction: ConAnyContextIndexAction,
+        resolution: ConAnyResolutionStatistics = .init()
     ) {
         self.outputs = outputs
         self.skipped = skipped
         self.contextIndexAction = contextIndexAction
+        self.resolution = resolution
     }
 
     public var outputCount: Int {
@@ -363,19 +425,34 @@ public struct ConAnyExecution {
         self.options = options
     }
 
-    public func resolve() throws -> [ConAnyResolvedOutput] {
+    public func resolveBatch() throws -> ConAnyResolvedBatch {
+        let startedAt = Date()
+
         let resolver = ConAnyResolver(
             baseDir: configDirectory.path
         )
 
-        return try configuration.renderables.map { renderable in
-            let matches = try resolver.resolveMatches(
+        var outputs: [ConAnyResolvedOutput] = []
+        var plannedTraversalRoots: [URL] = []
+
+        outputs.reserveCapacity(
+            configuration.renderables.count
+        )
+
+        for renderable in configuration.renderables {
+            let resolved = try resolver.resolveResult(
                 renderable,
                 maxDepth: options.maxDepth,
                 includeDotfiles: options.includeDotfiles,
                 ignoreMap: options.ignoreMap,
                 verbose: options.verboseResolution
             )
+
+            plannedTraversalRoots.append(
+                contentsOf: resolved.plannedTraversalRoots
+            )
+
+            let matches = resolved.matches
 
             let files = matches.map {
                 $0.url.standardizedFileURL
@@ -402,22 +479,53 @@ public struct ConAnyExecution {
                 }
             )
 
-            return ConAnyResolvedOutput(
-                renderable: renderable,
-                outputURL: resolver.outputURL(
-                    for: renderable
-                ),
-                files: files,
-                selectedContentByFile: selectedContentByFile,
-                presentedPathByFile: presentedPathByFile
+            outputs.append(
+                ConAnyResolvedOutput(
+                    renderable: renderable,
+                    outputURL: resolver.outputURL(
+                        for: renderable
+                    ),
+                    files: files,
+                    selectedContentByFile: selectedContentByFile,
+                    presentedPathByFile: presentedPathByFile
+                )
             )
         }
+
+        let matchedOutputCount = outputs.reduce(
+            0
+        ) {
+            $0 + ($1.isEmpty ? 0 : 1)
+        }
+
+        let duration = Date().timeIntervalSince(
+            startedAt
+        )
+
+        return .init(
+            outputs: outputs,
+            statistics: .init(
+                duration: duration,
+                scanRequestCount: configuration.renderables.count,
+                plannedTraversalCount: plannedTraversalRoots.count,
+                uniqueRoots: plannedTraversalRoots,
+                matchedOutputCount: matchedOutputCount,
+                unmatchedOutputCount:
+                    outputs.count
+                    - matchedOutputCount
+            )
+        )
+    }
+
+    public func resolve() throws -> [ConAnyResolvedOutput] {
+        try resolveBatch().outputs
     }
 
     public func render(
         concurrency: IOConcurrency = .automatic
     ) async throws -> ConAnyRenderBatchResult {
-        let resolved = try resolve()
+        let resolvedBatch = try resolveBatch()
+        let resolved = resolvedBatch.outputs
 
         var outputs: [ConAnyRenderedOutput] = []
         var skipped: [ConAnyResolvedOutput] = []
@@ -450,7 +558,8 @@ public struct ConAnyExecution {
 
         return .init(
             outputs: outputs,
-            skipped: skipped
+            skipped: skipped,
+            resolution: resolvedBatch.statistics
         )
     }
 
@@ -474,7 +583,8 @@ public struct ConAnyExecution {
     public func write(
         concurrency: IOConcurrency = .automatic
     ) async throws -> ConAnyWriteBatchResult {
-        let resolved = try resolve()
+        let resolvedBatch = try resolveBatch()
+        let resolved = resolvedBatch.outputs
 
         let workspace = ConcatenationWorkspace(
             configuration: configURL
@@ -544,7 +654,8 @@ public struct ConAnyExecution {
         return .init(
             outputs: outputs,
             skipped: skipped,
-            contextIndexAction: contextIndexAction
+            contextIndexAction: contextIndexAction,
+            resolution: resolvedBatch.statistics
         )
     }
 }

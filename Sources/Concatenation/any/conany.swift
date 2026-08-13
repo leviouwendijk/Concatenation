@@ -14,6 +14,21 @@ public enum ConAnyResolveError: Error, LocalizedError {
     }
 }
 
+public struct ConAnyResolverResult: Sendable {
+    public let matches: [SelectionScanMatch]
+    public let plannedTraversalRoots: [URL]
+
+    public init(
+        matches: [SelectionScanMatch],
+        plannedTraversalRoots: [URL]
+    ) {
+        self.matches = matches
+        self.plannedTraversalRoots = plannedTraversalRoots.map(
+            \.standardizedFileURL
+        )
+    }
+}
+
 public struct ConAnyResolver {
     private let baseDir: String
 
@@ -28,13 +43,13 @@ public struct ConAnyResolver {
         .path
     }
 
-    public func resolveMatches(
+    public func resolveResult(
         _ renderable: ConAnyRenderableObject,
         maxDepth: Int? = nil,
         includeDotfiles: Bool = false,
         ignoreMap: IgnoreMap? = nil,
         verbose: Bool = false
-    ) throws -> [SelectionScanMatch] {
+    ) throws -> ConAnyResolverResult {
         let baseDirectory = URL(
             fileURLWithPath: baseDir,
             isDirectory: true
@@ -42,17 +57,21 @@ public struct ConAnyResolver {
         .standardizedFileURL
 
         if verbose {
-            print("ConAny resolving in \(baseDirectory.path)")
+            print(
+                "ConAny resolving in \(baseDirectory.path)"
+            )
         }
 
-        let specification = try ConAnyPathPorting.makeSpecification(
+        let prepared = try ConAnyPathPorting.prepareScan(
             from: renderable,
             relativeTo: baseDirectory
         )
 
         let result = try SelectionScan.scan(
-            specification,
-            relativeTo: .directoryURL(baseDirectory),
+            prepared.specification,
+            relativeTo: .directoryURL(
+                baseDirectory
+            ),
             configuration: .init(
                 maxDepth: maxDepth,
                 includeHidden: includeDotfiles,
@@ -64,32 +83,76 @@ public struct ConAnyResolver {
 
         if verbose {
             for match in result.matches {
-                print("match: \(match.url.path)")
-                print("  selections: \(match.contentSelections)")
+                print(
+                    "match: \(match.url.path)"
+                )
+
+                print(
+                    "  selections: \(match.contentSelections)"
+                )
             }
         }
 
-        if verbose, !result.warnings.isEmpty {
-            print("SelectionScan warnings: \(result.warnings)")
+        if verbose,
+           !result.warnings.isEmpty {
+            print(
+                "SelectionScan warnings: \(result.warnings)"
+            )
         }
 
         var matches = result.matches
+
         let filteredURLs = try ConAnyPathPorting.applyStaticIgnoreDefaults(
-            to: matches.map(\.url)
+            to: matches.map(
+                \.url
+            )
         )
+
         let ignoreFilteredURLs = ConAnyPathPorting.applyIgnoreMap(
             ignoreMap,
             to: filteredURLs
         )
-        let allowed = Set(ignoreFilteredURLs.map(\.standardizedFileURL))
+
+        let allowed = Set(
+            ignoreFilteredURLs.map(
+                \.standardizedFileURL
+            )
+        )
 
         matches = matches.filter {
-            allowed.contains($0.url.standardizedFileURL)
+            allowed.contains(
+                $0.url.standardizedFileURL
+            )
         }
 
-        matches = ConAnyPathPorting.deduplicated(matches)
+        matches = ConAnyPathPorting.deduplicated(
+            matches
+        )
 
-        return matches.sorted { $0.url.path < $1.url.path }
+        return .init(
+            matches: matches.sorted {
+                $0.url.path < $1.url.path
+            },
+            plannedTraversalRoots: prepared.plan.traversals.map(
+                \.root
+            )
+        )
+    }
+
+    public func resolveMatches(
+        _ renderable: ConAnyRenderableObject,
+        maxDepth: Int? = nil,
+        includeDotfiles: Bool = false,
+        ignoreMap: IgnoreMap? = nil,
+        verbose: Bool = false
+    ) throws -> [SelectionScanMatch] {
+        try resolveResult(
+            renderable,
+            maxDepth: maxDepth,
+            includeDotfiles: includeDotfiles,
+            ignoreMap: ignoreMap,
+            verbose: verbose
+        ).matches
     }
 
     public func resolve(

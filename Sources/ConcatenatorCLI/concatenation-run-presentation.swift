@@ -139,6 +139,17 @@ func printConAnyRunSummary(
     )
 
     print(
+        "  resolution: "
+            + formattedDuration(
+                result.resolution.duration
+            )
+            + " · \(formattedCount(result.resolution.scanRequestCount)) scans"
+            + " · \(formattedCount(result.resolution.plannedTraversalCount)) planned traversals"
+            + " · \(formattedCount(result.resolution.uniqueRootCount)) unique roots"
+            + " · \(formattedCount(result.resolution.unmatchedOutputCount)) unmatched"
+    )
+
+    print(
         "  cache: "
             + "\(formattedCount(result.reusedSourceCount)) reused"
             + " · \(formattedCount(result.cache.rebuilds)) rebuilt"

@@ -125,7 +125,42 @@ extension ConcatenationFlowSuite {
                     )
                 )
 
-                let resolved = try execution.resolve()
+                let resolvedBatch = try execution.resolveBatch()
+                let resolved = resolvedBatch.outputs
+
+                try Expect.equal(
+                    resolvedBatch.statistics.scanRequestCount,
+                    2,
+                    "conany.execution.resolution-scan-request-count"
+                )
+
+                try Expect.equal(
+                    resolvedBatch.statistics.matchedOutputCount,
+                    2,
+                    "conany.execution.resolution-matched-output-count"
+                )
+
+                try Expect.equal(
+                    resolvedBatch.statistics.unmatchedOutputCount,
+                    0,
+                    "conany.execution.resolution-unmatched-output-count"
+                )
+
+                try Expect.true(
+                    resolvedBatch.statistics.plannedTraversalCount
+                        >= resolvedBatch.statistics.uniqueRootCount,
+                    "conany.execution.resolution-traversals-cover-roots"
+                )
+
+                try Expect.true(
+                    resolvedBatch.statistics.uniqueRootCount > 0,
+                    "conany.execution.resolution-has-roots"
+                )
+
+                try Expect.true(
+                    resolvedBatch.statistics.duration >= 0,
+                    "conany.execution.resolution-duration"
+                )
 
                 try Expect.equal(
                     resolved.map(
@@ -183,6 +218,24 @@ extension ConcatenationFlowSuite {
                     rendered.fileCount,
                     2,
                     "conany.execution.render-file-count"
+                )
+
+                try Expect.equal(
+                    rendered.resolution.scanRequestCount,
+                    2,
+                    "conany.execution.render-resolution-scan-count"
+                )
+
+                try Expect.equal(
+                    rendered.resolution.matchedOutputCount,
+                    rendered.outputCount,
+                    "conany.execution.render-resolution-matched-count"
+                )
+
+                try Expect.equal(
+                    rendered.resolution.unmatchedOutputCount,
+                    rendered.skipped.count,
+                    "conany.execution.render-resolution-unmatched-count"
                 )
 
                 try Expect.equal(
@@ -310,6 +363,24 @@ extension ConcatenationFlowSuite {
                     "conany.execution.write-output-count"
                 )
 
+                try Expect.equal(
+                    cold.resolution.scanRequestCount,
+                    2,
+                    "conany.execution.cold-resolution-scan-count"
+                )
+
+                try Expect.equal(
+                    cold.resolution.matchedOutputCount,
+                    cold.outputCount,
+                    "conany.execution.cold-resolution-matched-count"
+                )
+
+                try Expect.equal(
+                    cold.resolution.unmatchedOutputCount,
+                    cold.skipped.count,
+                    "conany.execution.cold-resolution-unmatched-count"
+                )
+
                 try Expect.true(
                     cold.performedWrite,
                     "conany.execution.cold-performed-write"
@@ -397,6 +468,24 @@ extension ConcatenationFlowSuite {
                 try Expect.true(
                     !warm.performedWrite,
                     "conany.execution.warm-no-write"
+                )
+
+                try Expect.equal(
+                    warm.resolution.scanRequestCount,
+                    2,
+                    "conany.execution.warm-resolution-scan-count"
+                )
+
+                try Expect.equal(
+                    warm.resolution.matchedOutputCount,
+                    warm.outputCount,
+                    "conany.execution.warm-resolution-matched-count"
+                )
+
+                try Expect.equal(
+                    warm.resolution.unmatchedOutputCount,
+                    warm.skipped.count,
+                    "conany.execution.warm-resolution-unmatched-count"
                 )
 
                 try Expect.equal(
