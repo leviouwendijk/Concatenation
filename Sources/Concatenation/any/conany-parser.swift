@@ -1,5 +1,6 @@
 import Foundation
 import PathParsing
+import Readers
 import SelectionParsing
 
 public struct ConAnyIncludeBlock: Sendable, Codable, Equatable {
@@ -103,12 +104,24 @@ public enum ConAnyParser {
     public static func parseFile(
         at url: URL
     ) throws -> ConAnyConfig {
-        let raw = try String(
-            contentsOf: url,
-            encoding: .utf8
-        )
+        let raw = try TextFileReader(
+            url
+        ).read(
+            options: .init(
+                decoding: .exact(
+                    TextEncoding(
+                        .utf8
+                    )
+                ),
+                missingFilePolicy: .throwError,
+                newlineNormalization: .preserve,
+                cachePolicy: .system
+            )
+        ).text
 
-        return try parse(raw)
+        return try parse(
+            raw
+        )
     }
 
     public static func parse(

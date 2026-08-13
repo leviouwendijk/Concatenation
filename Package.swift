@@ -21,6 +21,10 @@ let package = Package(
             name: "contest",
             targets: ["ConcatenationTestFlows"]
         ),
+        .executable(
+            name: "conbench",
+            targets: ["ConcatenationBenchmark"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/leviouwendijk/Primitives.git", branch: "master"),
@@ -30,6 +34,7 @@ let package = Package(
         .package(url: "https://github.com/leviouwendijk/Clipboard.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Position.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Path.git", branch: "master"),
+        .package(url: "https://github.com/leviouwendijk/IO.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Writers.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Readers.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Selection.git", branch: "master"),
@@ -49,6 +54,7 @@ let package = Package(
                 .product(name: "Position", package: "Position"),
                 .product(name: "Path", package: "Path"),
                 .product(name: "PathParsing", package: "Path"),
+                .product(name: "IO", package: "IO"),
                 .product(name: "Writers", package: "Writers"),
                 .product(name: "Readers", package: "Readers"),
                 .product(name: "Selection", package: "Selection"),
@@ -65,6 +71,7 @@ let package = Package(
             dependencies: [
                 .target(name: "Concatenation"),
                 .product(name: "Arguments", package: "Arguments"),
+                .product(name: "IO", package: "IO"),
                 .product(name: "Terminal", package: "Terminal")
             ],
             path: "Sources/ConcatenatorCLI"
@@ -73,7 +80,17 @@ let package = Package(
             name: "ConcatenationTestFlows",
             dependencies: [
                 .target(name: "Concatenation"),
+                .product(name: "IO", package: "IO"),
+                .product(name: "Readers", package: "Readers"),
+                .product(name: "Writers", package: "Writers"),
                 .product(name: "TestFlows", package: "TestFlows"),
+            ]
+        ),
+        .executableTarget(
+            name: "ConcatenationBenchmark",
+            dependencies: [
+                .target(name: "Concatenation"),
+                .product(name: "IO", package: "IO"),
             ]
         ),
     ]

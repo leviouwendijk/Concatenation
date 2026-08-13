@@ -1,4 +1,6 @@
 import Foundation
+import IO
+import Writers
 
 public enum ConAnyInitError: Error {
     case alreadyExists
@@ -19,8 +21,9 @@ public struct ConAnyInitializer {
         force: Bool = false,
         instructions: Bool = false
     ) throws {
-        let fileManager = FileManager.default
-        let exists = fileManager.fileExists(atPath: path.path)
+        let exists = FileSystem.default.exists(
+            path
+        )
 
         if exists && !force {
             throw ConAnyInitError.alreadyExists
@@ -110,10 +113,13 @@ public struct ConAnyInitializer {
         }
         """
 
-        try template.write(
-            to: path,
-            atomically: true,
-            encoding: .utf8
+        try StandardWriter(
+            path
+        ).write(
+            template,
+            options: force
+                ? .overwriteWithoutBackup
+                : .init()
         )
     }
 }

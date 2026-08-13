@@ -1,4 +1,5 @@
 import Foundation
+import IO
 import Terminal
 import Indentation
 import Primitives
@@ -13,6 +14,7 @@ public struct FileConcatenator: SafelyConcatenatable {
     public let inputFiles: [URL]
     public let outputURL: URL
     public let context: ConcatenationContext?
+    public let workspace: ConcatenationWorkspace?
 
     public let selectedContentByFile: [URL: [ContentSelection]]
     public let presentedPathByFile: [URL: String]
@@ -42,6 +44,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         inputFiles: [URL],
         outputURL: URL,
         context: ConcatenationContext? = nil,
+        workspace: ConcatenationWorkspace? = nil,
         selectedContentByFile: [URL: [ContentSelection]] = [:],
         presentedPathByFile: [URL: String] = [:],
 
@@ -69,6 +72,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         self.inputFiles = inputFiles
         self.outputURL = outputURL
         self.context = context
+        self.workspace = workspace
         self.selectedContentByFile = selectedContentByFile
         self.presentedPathByFile = Dictionary(
             uniqueKeysWithValues: presentedPathByFile.map {
@@ -120,15 +124,165 @@ public struct FileConcatenator: SafelyConcatenatable {
     }
 
     public func document() throws -> ConcatenationDocument {
+        try prepareDocument(
+            preinspected: [:],
+            persistCache: true
+        ).document
+    }
+
+    public func document(
+        concurrency: IOConcurrency
+    ) async throws -> ConcatenationDocument {
+        try await prepareDocument(
+            concurrency: concurrency,
+            persistCache: true
+        ).document
+    }
+
+    private func prepareDocument(
+        concurrency: IOConcurrency,
+        persistCache: Bool
+    ) async throws -> ConcatenationPreparedDocument {
+        let cacheStore = workspace.map {
+            ConcatenationCacheStore(
+                workspace: $0
+            )
+        }
+
+        let cachedManifest = try cacheStore?.load(
+            for: outputURL
+        )
+
+        let preinspected = try await preinspectSources(
+            concurrency: concurrency
+        )
+
+        let presafeguards = try await preinspectSafeguards(
+            preinspected: preinspected,
+            cachedManifest: cachedManifest,
+            concurrency: concurrency
+        )
+
+        let preloadedSections = try await preloadCachedSections(
+            preinspected: preinspected,
+            presafeguards: presafeguards,
+            cachedManifest: cachedManifest,
+            concurrency: concurrency
+        )
+
+        let prereads = try await preReadSources(
+            preinspected: preinspected,
+            presafeguards: presafeguards,
+            preloadedSections: preloadedSections,
+            cachedManifest: cachedManifest,
+            concurrency: concurrency
+        )
+
+        return try prepareDocument(
+            preinspected: preinspected,
+            presafeguards: presafeguards,
+            preloadedSections: preloadedSections,
+            sectionsPreloaded: true,
+            prereads: prereads,
+            cachedManifest: cachedManifest,
+            persistCache: persistCache
+        )
+    }
+
+    private func prepareDocument(
+        preinspected initialPreinspections: [
+            URL: [FileMetadataSnapshot]
+        ],
+        presafeguards initialPresafeguards: [
+            URL: ConcatenationCachedSafeguard
+        ] = [:],
+        preloadedSections initialPreloadedSections: [
+            Int: ConcatenationSection
+        ] = [:],
+        sectionsPreloaded: Bool = false,
+        prereads initialPrereads: [
+            Int: LineReadResult
+        ] = [:],
+        cachedManifest providedCachedManifest:
+            ConcatenationCacheManifest? = nil,
+        persistCache: Bool = true
+    ) throws -> ConcatenationPreparedDocument {
         let fileManager = FileManager.default
+        var preinspected = initialPreinspections
+        let presafeguards = initialPresafeguards
+        var preloadedSections = initialPreloadedSections
+        var prereads = initialPrereads
+
+        let cacheStore = workspace.map {
+            ConcatenationCacheStore(
+                workspace: $0
+            )
+        }
+
+        let cachedManifest: ConcatenationCacheManifest?
+
+        if let providedCachedManifest {
+            cachedManifest = providedCachedManifest
+        } else {
+            cachedManifest = try cacheStore?.load(
+                for: outputURL
+            )
+        }
+
+        var cachedSourcesByFile: [
+            URL: [ConcatenationCachedSource]
+        ] = [:]
+
+        for cachedSource in cachedManifest?.sources ?? [] {
+            cachedSourcesByFile[
+                cachedSource.file.standardizedFileURL,
+                default: []
+            ].append(
+                cachedSource
+            )
+        }
+
+        var cachedSafeguardsByFile: [
+            URL: ConcatenationCachedSafeguard
+        ] = [:]
+
+        for cachedSafeguard in cachedManifest?.safeguards ?? [] {
+            cachedSafeguardsByFile[
+                cachedSafeguard.file.standardizedFileURL
+            ] = cachedSafeguard
+        }
+
+        let deepSafeguardPolicyFingerprint: ContentFingerprint?
+
+        if protectSecrets
+            && !allowSecrets
+            && deepSecretInspection
+        {
+            deepSafeguardPolicyFingerprint = try safeguardPolicyFingerprint()
+        } else {
+            deepSafeguardPolicyFingerprint = nil
+        }
 
         var sections: [ConcatenationSection] = []
+        var cachedSources: [ConcatenationCachedSource] = []
+        var cachedSafeguards: [ConcatenationCachedSafeguard] = []
+        var evaluatedSafeguardsByFile: [
+            URL: ConcatenationCachedSafeguard
+        ] = [:]
         var warnings: [ConcatenationWarning] = []
         var errors: [Error] = []
 
         var blockedFileCount = 0
 
-        for source in plan.sources {
+        var metadataInspections = 0
+        var safeguardReads = 0
+        var safeguardHits = 0
+        var sourceReads = 0
+        var metadataHits = 0
+        var contentHits = 0
+        var rebuilds = 0
+
+        for (sourceIndex, source) in plan.sources.enumerated() {
             let fileURL = source.file
 
             if protectSecrets && !allowSecrets {
@@ -157,15 +311,114 @@ public struct FileConcatenator: SafelyConcatenatable {
                     continue
                 }
 
-                if deepSecretInspection {
-                    let (deepMatched, deepReason) = deepSecretCheck(
-                        fileURL
+            }
+
+            do {
+                let resolved = try resolveSymlink(
+                    at: fileURL
+                )
+
+                let metadata: FileMetadataSnapshot
+                let resolvedKey = resolved.standardizedFileURL
+
+                if var candidates = preinspected[
+                    resolvedKey
+                ],
+                !candidates.isEmpty {
+                    metadata = candidates.removeFirst()
+
+                    if candidates.isEmpty {
+                        preinspected.removeValue(
+                            forKey: resolvedKey
+                        )
+                    } else {
+                        preinspected[
+                            resolvedKey
+                        ] = candidates
+                    }
+                } else {
+                    metadata = try FileInspector(
+                        resolved
+                    ).inspect()
+                }
+
+                metadataInspections += 1
+
+                if let deepSafeguardPolicyFingerprint {
+                    let safeguardKey = resolved.standardizedFileURL
+                    let previousSafeguard = cachedSafeguardsByFile[
+                        safeguardKey
+                    ]
+
+                    let previousSafeguardMatches: Bool
+
+                    if let previousSafeguard {
+                        previousSafeguardMatches =
+                            previousSafeguard.metadata == metadata
+                            && previousSafeguard.policyFingerprint
+                                == deepSafeguardPolicyFingerprint
+                    } else {
+                        previousSafeguardMatches = false
+                    }
+
+                    let safeguard: ConcatenationCachedSafeguard
+
+                    if let evaluated = evaluatedSafeguardsByFile[
+                        safeguardKey
+                    ],
+                    evaluated.metadata == metadata,
+                    evaluated.policyFingerprint
+                        == deepSafeguardPolicyFingerprint {
+                        if previousSafeguardMatches {
+                            safeguardHits += 1
+                        }
+
+                        safeguard = evaluated
+                    } else if let preinspectedSafeguard = presafeguards[
+                        safeguardKey
+                    ],
+                    preinspectedSafeguard.metadata == metadata,
+                    preinspectedSafeguard.policyFingerprint
+                        == deepSafeguardPolicyFingerprint {
+                        if previousSafeguardMatches {
+                            safeguardHits += 1
+                        } else {
+                            safeguardReads += 1
+                        }
+
+                        safeguard = preinspectedSafeguard
+                    } else if let previousSafeguard,
+                              previousSafeguardMatches {
+                        safeguardHits += 1
+                        safeguard = previousSafeguard
+                    } else {
+                        safeguardReads += 1
+
+                        let result = Self.deepSecretCheck(
+                            resolved
+                        )
+
+                        safeguard = .init(
+                            metadata: metadata,
+                            policyFingerprint:
+                                deepSafeguardPolicyFingerprint,
+                            matched: result.matched,
+                            reason: result.reason
+                        )
+                    }
+
+                    evaluatedSafeguardsByFile[
+                        safeguardKey
+                    ] = safeguard
+
+                    cachedSafeguards.append(
+                        safeguard
                     )
 
-                    if deepMatched {
+                    if safeguard.matched {
                         blockedFileCount += 1
 
-                        let reason = deepReason
+                        let reason = safeguard.reason
                             ?? "deep-secret heuristic matched"
 
                         warnings.append(
@@ -188,18 +441,118 @@ public struct FileConcatenator: SafelyConcatenatable {
                         continue
                     }
                 }
-            }
 
-            do {
-                let resolved = try resolveSymlink(
-                    at: fileURL
-                )
-
-                let section = try makeSection(
+                let transformationFingerprint = try sectionTransformationFingerprint(
                     for: source,
                     resolved: resolved,
+                    metadata: metadata,
                     fileManager: fileManager
                 )
+
+                let previous = consumeCachedSource(
+                    for: resolved,
+                    transformationFingerprint:
+                        transformationFingerprint,
+                    from: &cachedSourcesByFile
+                )
+
+                let section: ConcatenationSection
+                let cachedSource: ConcatenationCachedSource
+
+                let exactCachedSection: ConcatenationSection?
+
+                if let previous,
+                   previous.metadata == metadata,
+                   previous.transformationFingerprint
+                        == transformationFingerprint {
+                    if sectionsPreloaded {
+                        exactCachedSection = preloadedSections.removeValue(
+                            forKey: sourceIndex
+                        )
+                    } else {
+                        exactCachedSection = try loadCachedSection(
+                            previous,
+                            from: cacheStore
+                        )
+                    }
+                } else {
+                    exactCachedSection = nil
+                }
+
+                if let previous,
+                   let exactCachedSection {
+                    metadataHits += 1
+
+                    section = exactCachedSection
+                    cachedSource = previous
+                } else {
+                    sourceReads += 1
+
+                    let readResult: LineReadResult
+
+                    if let preread = prereads.removeValue(
+                        forKey: sourceIndex
+                    ) {
+                        readResult = preread
+                    } else {
+                        readResult = try readSource(
+                            resolved,
+                            inspected: metadata
+                        )
+                    }
+
+                    guard let contentFingerprint =
+                        readResult
+                            .fileSnapshot?
+                            .contentFingerprint
+                    else {
+                        throw ConcatenationCacheInvariantError
+                            .missingContentFingerprint(
+                                resolved
+                            )
+                    }
+
+                    if let previous,
+                       previous.contentFingerprint == contentFingerprint,
+                       previous.transformationFingerprint == transformationFingerprint,
+                       let reusedSection = try loadCachedSection(
+                            previous,
+                            from: cacheStore
+                       ) {
+                        contentHits += 1
+
+                        section = reusedSection
+                        cachedSource = .init(
+                            metadata: metadata,
+                            contentFingerprint: contentFingerprint,
+                            transformationFingerprint:
+                                transformationFingerprint
+                        )
+                    } else {
+                        rebuilds += 1
+
+                        section = makeSection(
+                            for: source,
+                            resolved: resolved,
+                            fileManager: fileManager,
+                            readResult: readResult,
+                            metadata: metadata
+                        )
+
+                        cachedSource = .init(
+                            metadata: metadata,
+                            contentFingerprint: contentFingerprint,
+                            transformationFingerprint:
+                                transformationFingerprint
+                        )
+
+                        try saveCachedSection(
+                            section,
+                            source: cachedSource,
+                            to: cacheStore
+                        )
+                    }
+                }
 
                 if section.wasTruncated,
                    let message = section.truncationMessage {
@@ -212,7 +565,13 @@ public struct FileConcatenator: SafelyConcatenatable {
                     )
                 }
 
-                sections.append(section)
+                sections.append(
+                    section
+                )
+
+                cachedSources.append(
+                    cachedSource
+                )
             } catch {
                 let wrapped = ConcatError.fileProcessingFailed(
                     url: fileURL,
@@ -228,6 +587,32 @@ public struct FileConcatenator: SafelyConcatenatable {
             throw MultiError(errors)
         }
 
+        let cacheStateChanged = !cacheStateMatches(
+            cachedManifest,
+            sources: cachedSources,
+            safeguards: cachedSafeguards
+        )
+
+        let preparedCacheManifest = cacheStore.map {
+            _ in
+
+            ConcatenationCacheManifest(
+                output: outputURL,
+                sources: cachedSources,
+                safeguards: cachedSafeguards,
+                artifact: cachedManifest?.artifact
+            )
+        }
+
+        if persistCache,
+           cacheStateChanged,
+           let cacheStore,
+           let preparedCacheManifest {
+            try cacheStore.save(
+                preparedCacheManifest
+            )
+        }
+
         let selectedLineCount = sections.reduce(0) { partial, section in
             partial + section.selectedLineCount
         }
@@ -237,14 +622,32 @@ public struct FileConcatenator: SafelyConcatenatable {
             renderedSectionCount: sections.count,
             blockedFileCount: blockedFileCount,
             truncatedSectionCount: sections.filter(\.wasTruncated).count,
-            selectedLineCount: selectedLineCount
+            selectedLineCount: selectedLineCount,
+            cache: .init(
+                metadataInspections: metadataInspections,
+                safeguardReads: safeguardReads,
+                safeguardHits: safeguardHits,
+                sourceReads: sourceReads,
+                metadataHits: metadataHits,
+                contentHits: contentHits,
+                rebuilds: rebuilds
+            )
         )
 
-        return ConcatenationDocument(
-            context: context,
-            sections: sections,
-            warnings: warnings,
-            statistics: statistics
+        let sourceMaterialFingerprint = try sourceMaterialFingerprint(
+            for: cachedSources
+        )
+
+        return ConcatenationPreparedDocument(
+            document: ConcatenationDocument(
+                context: context,
+                sections: sections,
+                warnings: warnings,
+                statistics: statistics,
+                sourceMaterialFingerprint: sourceMaterialFingerprint
+            ),
+            cacheManifest: preparedCacheManifest,
+            cacheStateChanged: cacheStateChanged
         )
     }
 
@@ -276,11 +679,41 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         printWarnings(from: preparedDocument)
 
-        let rendered = render(preparedDocument)
+        let materialFingerprint = try artifactMaterialFingerprint(
+            for: preparedDocument
+        )
+
+        if !copyToClipboard,
+           try validatedCachedArtifact(
+                materialFingerprint: materialFingerprint
+           ) != nil {
+            if verbose {
+                print(
+                    "Unchanged: \(outputURL.path)"
+                )
+            }
+
+            return ConcatenationWriteResult(
+                document: preparedDocument,
+                renderResult: nil,
+                writeResult: nil,
+                renderedLineCount:
+                    preparedDocument.statistics.selectedLineCount
+            )
+        }
+
+        let rendered = render(
+            preparedDocument
+        )
 
         let writeResult = try ConcatenationWriter(
             outputURL
         ).write(rendered.text)
+
+        try recordArtifact(
+            renderedText: rendered.text,
+            materialFingerprint: materialFingerprint
+        )
 
         if copyToClipboard {
             rendered.text.clipboard()
@@ -298,14 +731,275 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         return ConcatenationWriteResult(
             document: preparedDocument,
-            text: rendered.text,
+            renderResult: rendered,
             writeResult: writeResult,
-            renderedLineCount: preparedDocument.statistics.selectedLineCount
+            renderedLineCount:
+                preparedDocument.statistics.selectedLineCount
+        )
+    }
+
+    @discardableResult
+    public func write(
+        concurrency: IOConcurrency
+    ) async throws -> ConcatenationWriteResult {
+        if verbose {
+            if let location {
+                print("Concatenation location: \(location)")
+            }
+
+            print(
+                "Concatenating \(inputFiles.count) files → \(outputURL.path)"
+            )
+        }
+
+        let preparation: ConcatenationPreparedDocument
+
+        do {
+            preparation = try await prepareDocument(
+                concurrency: concurrency,
+                persistCache: false
+            )
+        } catch {
+            printErrors(for: error)
+            throw error
+        }
+
+        let preparedDocument = preparation.document
+
+        printWarnings(
+            from: preparedDocument
+        )
+
+        let materialFingerprint = try artifactMaterialFingerprint(
+            for: preparedDocument
+        )
+
+        if !copyToClipboard,
+           let artifact = try validatedCachedArtifact(
+                materialFingerprint: materialFingerprint,
+                manifest: preparation.cacheManifest
+           ) {
+            try persistCachedState(
+                preparation,
+                artifact: artifact
+            )
+
+            if verbose {
+                print(
+                    "Unchanged: \(outputURL.path)"
+                )
+            }
+
+            return ConcatenationWriteResult(
+                document: preparedDocument,
+                renderResult: nil,
+                writeResult: nil,
+                renderedLineCount:
+                    preparedDocument.statistics.selectedLineCount
+            )
+        }
+
+        let rendered = render(
+            preparedDocument
+        )
+
+        let writeResult = try ConcatenationWriter(
+            outputURL
+        ).write(
+            rendered.text
+        )
+
+        let artifact = try makeCachedArtifact(
+            renderedText: rendered.text,
+            materialFingerprint: materialFingerprint
+        )
+
+        try persistCachedState(
+            preparation,
+            artifact: artifact
+        )
+
+        if copyToClipboard {
+            rendered.text.clipboard()
+
+            if verbose {
+                print(
+                    "Copied output to clipboard"
+                )
+            }
+        }
+
+        if verbose {
+            print(
+                "Done: \(preparedDocument.statistics.selectedLineCount) lines written"
+            )
+        }
+
+        return ConcatenationWriteResult(
+            document: preparedDocument,
+            renderResult: rendered,
+            writeResult: writeResult,
+            renderedLineCount:
+                preparedDocument.statistics.selectedLineCount
         )
     }
 
     public func run() throws -> Int {
         try write().renderedLineCount
+    }
+
+    public func run(
+        concurrency: IOConcurrency
+    ) async throws -> Int {
+        try await write(
+            concurrency: concurrency
+        ).renderedLineCount
+    }
+}
+
+private struct ConcatenationPreparedDocument:
+    Sendable
+{
+    let document: ConcatenationDocument
+    let cacheManifest: ConcatenationCacheManifest?
+    let cacheStateChanged: Bool
+}
+
+private struct ConcatenationPreinspection:
+    Sendable
+{
+    let resolved: URL
+    let metadata: FileMetadataSnapshot?
+}
+
+
+private struct ConcatenationSectionPreloadJob:
+    Sendable
+{
+    let sourceIndex: Int
+    let source: ConcatenationCachedSource
+}
+
+private struct ConcatenationSectionPreload:
+    Sendable
+{
+    let sourceIndex: Int
+    let section: ConcatenationSection?
+}
+
+private struct ConcatenationSourceReadJob:
+    Sendable
+{
+    let sourceIndex: Int
+    let metadata: FileMetadataSnapshot
+}
+
+private struct ConcatenationSourcePreread:
+    Sendable
+{
+    let sourceIndex: Int
+    let result: LineReadResult?
+}
+
+private struct ConcatenationArtifactMaterial:
+    Encodable
+{
+    let version: Int
+    let output: String
+    let format: String
+    let delimiterStyle: String
+    let delimiterClosure: Bool
+    let maxLinesPerFile: Int?
+    let trimBlankLines: Bool
+    let lineNumbers: Bool
+    let raw: Bool
+    let relativePaths: Bool
+    let includeSourceModifiedAt: Bool
+    let obscurations: [String: String]
+    let context: ConcatenationContext?
+    let warnings: [ConcatenationArtifactWarning]
+    let statistics: ConcatenationArtifactStatistics
+    let sourceMaterialFingerprint: ContentFingerprint
+}
+
+private struct ConcatenationSourceMaterial:
+    Encodable
+{
+    let version: Int
+    let sources: [ConcatenationSourceMaterialIdentity]
+}
+
+private struct ConcatenationSourceMaterialIdentity:
+    Encodable
+{
+    let contentFingerprint: ContentFingerprint
+    let transformationFingerprint: ContentFingerprint
+}
+
+private struct ConcatenationArtifactWarning:
+    Encodable
+{
+    let kind: String
+    let file: String
+    let message: String
+}
+
+private struct ConcatenationArtifactStatistics:
+    Encodable
+{
+    let sourceCount: Int
+    let renderedSectionCount: Int
+    let blockedFileCount: Int
+    let truncatedSectionCount: Int
+    let selectedLineCount: Int
+}
+
+private struct ConcatenationDeepSafeguardPolicy:
+    Encodable
+{
+    let version: Int
+    let maxPeekBytes: Int
+    let protectedExtensions: [String]
+    let pemMarkers: [String]
+    let privateKeyJSONTokens: [String]
+    let treatNullByteAsBinary: Bool
+}
+
+private struct ConcatenationSectionTransformation:
+    Encodable
+{
+    let version: Int
+    let presentedPath: String
+    let selections: [ContentSelection]
+    let trimBlankLines: Bool
+    let maxLinesPerFile: Int?
+    let obscurations: [String: String]
+    let modifiedAt: Date?
+}
+
+private enum ConcatenationCacheInvariantError:
+    Error,
+    LocalizedError
+{
+    case missingContentFingerprint(URL)
+    case missingSourceMaterialFingerprint
+    case missingArtifactContentFingerprint(URL)
+    case missingWrittenArtifact(URL)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingContentFingerprint(let url):
+            return "Missing content fingerprint after reading \(url.path)"
+
+        case .missingSourceMaterialFingerprint:
+            return "Missing source material fingerprint for concatenation document"
+
+        case .missingArtifactContentFingerprint(let url):
+            return "Missing content fingerprint after reading artifact \(url.path)"
+
+        case .missingWrittenArtifact(let url):
+            return "Written concatenation artifact does not exist at \(url.path)"
+        }
     }
 }
 
@@ -356,21 +1050,35 @@ private extension FileConcatenator {
         )
     }
 
+    func readSource(
+        _ resolved: URL,
+        inspected metadata: FileMetadataSnapshot
+    ) throws -> LineReadResult {
+        try LineReader(
+            resolved
+        ).read(
+            inspected: metadata,
+            options: sourceReadOptions
+        )
+    }
+
+    var sourceReadOptions: LineReadOptions {
+        .init(
+            text: .init(
+                decoding: .commonTextFallbacks,
+                missingFilePolicy: .throwError,
+                newlineNormalization: .unix
+            )
+        )
+    }
+
     func makeSection(
         for source: ConcatenationSource,
         resolved: URL,
-        fileManager: FileManager
-    ) throws -> ConcatenationSection {
-        let readResult = try LineReader(resolved).read(
-            options: .init(
-                text: .init(
-                    decoding: .commonTextFallbacks,
-                    missingFilePolicy: .throwError,
-                    newlineNormalization: .unix
-                )
-            )
-        )
-
+        fileManager: FileManager,
+        readResult: LineReadResult,
+        metadata: FileMetadataSnapshot
+    ) -> ConcatenationSection {
         let (processedLines, blankWarnings) = processBlankLines(
             readResult.lines,
             trim: options.line.trimblanks
@@ -407,14 +1115,14 @@ private extension FileConcatenator {
 
         return ConcatenationSection(
             file: resolved,
-            presentedPath: source.presentedPath
-                ?? displayPath(
-                    for: resolved,
-                    fileManager: fileManager
-                ),
+            presentedPath: sectionPresentedPath(
+                for: source,
+                resolved: resolved,
+                fileManager: fileManager
+            ),
             modifiedAt: options.output.modifiedstamp
                 ? sourceModifiedAtString(
-                    for: resolved
+                    metadata.modifiedAt
                 )
                 : nil,
             slices: slices,
@@ -527,6 +1235,943 @@ private extension FileConcatenator {
         }
     }
 
+    func preinspectSafeguards(
+        preinspected: [
+            URL: [FileMetadataSnapshot]
+        ],
+        cachedManifest: ConcatenationCacheManifest?,
+        concurrency: IOConcurrency
+    ) async throws -> [
+        URL: ConcatenationCachedSafeguard
+    ] {
+        guard protectSecrets,
+              !allowSecrets,
+              deepSecretInspection else {
+            return [:]
+        }
+
+        let policyFingerprint = try safeguardPolicyFingerprint()
+
+        var cachedByFile: [
+            URL: ConcatenationCachedSafeguard
+        ] = [:]
+
+        for safeguard in cachedManifest?.safeguards ?? [] {
+            cachedByFile[
+                safeguard.file.standardizedFileURL
+            ] = safeguard
+        }
+
+        var reused: [
+            URL: ConcatenationCachedSafeguard
+        ] = [:]
+
+        var jobs: [
+            FileMetadataSnapshot
+        ] = []
+
+        var scheduled: Set<URL> = []
+
+        for source in plan.sources {
+            let file = source.file
+
+            if isProtectedFile(
+                file
+            ) {
+                continue
+            }
+
+            guard let resolved = try? resolveSymlink(
+                at: file
+            ) else {
+                continue
+            }
+
+            let key = resolved.standardizedFileURL
+
+            guard !scheduled.contains(
+                key
+            ) else {
+                continue
+            }
+
+            guard let metadata = preinspected[
+                key
+            ]?.first else {
+                continue
+            }
+
+            scheduled.insert(
+                key
+            )
+
+            if let cached = cachedByFile[key],
+               cached.metadata == metadata,
+               cached.policyFingerprint == policyFingerprint {
+                reused[
+                    key
+                ] = cached
+
+                continue
+            }
+
+            jobs.append(
+                metadata
+            )
+        }
+
+        let checked = try await IOExecutor(
+            concurrency: concurrency
+        ).map(
+            jobs
+        ) { metadata in
+            let result = Self.deepSecretCheck(
+                metadata.url
+            )
+
+            return ConcatenationCachedSafeguard(
+                metadata: metadata,
+                policyFingerprint: policyFingerprint,
+                matched: result.matched,
+                reason: result.reason
+            )
+        }
+
+        for safeguard in checked {
+            reused[
+                safeguard.file.standardizedFileURL
+            ] = safeguard
+        }
+
+        return reused
+    }
+
+    func preloadCachedSections(
+        preinspected: [
+            URL: [FileMetadataSnapshot]
+        ],
+        presafeguards: [
+            URL: ConcatenationCachedSafeguard
+        ],
+        cachedManifest: ConcatenationCacheManifest?,
+        concurrency: IOConcurrency
+    ) async throws -> [
+        Int: ConcatenationSection
+    ] {
+        guard let workspace,
+              let cachedManifest else {
+            return [:]
+        }
+
+        let fileManager = FileManager.default
+        let cacheStore = ConcatenationCacheStore(
+            workspace: workspace
+        )
+
+        var remainingMetadata = preinspected
+        var cachedSourcesByFile: [
+            URL: [ConcatenationCachedSource]
+        ] = [:]
+
+        for cachedSource in cachedManifest.sources {
+            cachedSourcesByFile[
+                cachedSource.file.standardizedFileURL,
+                default: []
+            ].append(
+                cachedSource
+            )
+        }
+
+        var jobs: [ConcatenationSectionPreloadJob] = []
+
+        for (sourceIndex, source) in plan.sources.enumerated() {
+            let file = source.file
+
+            if protectSecrets
+                && !allowSecrets
+                && isProtectedFile(
+                    file
+                )
+            {
+                continue
+            }
+
+            guard let resolved = try? resolveSymlink(
+                at: file
+            ) else {
+                continue
+            }
+
+            let key = resolved.standardizedFileURL
+
+            guard var metadataCandidates = remainingMetadata[
+                key
+            ],
+            !metadataCandidates.isEmpty else {
+                continue
+            }
+
+            let metadata = metadataCandidates.removeFirst()
+
+            if metadataCandidates.isEmpty {
+                remainingMetadata.removeValue(
+                    forKey: key
+                )
+            } else {
+                remainingMetadata[
+                    key
+                ] = metadataCandidates
+            }
+
+            if protectSecrets
+                && !allowSecrets
+                && deepSecretInspection
+            {
+                guard let safeguard = presafeguards[
+                    key
+                ],
+                !safeguard.matched else {
+                    continue
+                }
+            }
+
+            guard let transformationFingerprint =
+                try? sectionTransformationFingerprint(
+                    for: source,
+                    resolved: resolved,
+                    metadata: metadata,
+                    fileManager: fileManager
+                )
+            else {
+                continue
+            }
+
+            guard
+                let previous = consumeCachedSource(
+                    for: resolved,
+                    transformationFingerprint:
+                        transformationFingerprint,
+                    from: &cachedSourcesByFile
+                ),
+                previous.metadata == metadata,
+                previous.transformationFingerprint
+                    == transformationFingerprint
+            else {
+                continue
+            }
+
+            jobs.append(
+                .init(
+                    sourceIndex: sourceIndex,
+                    source: previous
+                )
+            )
+        }
+
+        let outputURL = outputURL
+
+        let completed = try await IOExecutor(
+            concurrency: concurrency
+        ).map(
+            jobs
+        ) { job in
+            ConcatenationSectionPreload(
+                sourceIndex: job.sourceIndex,
+                section: try? cacheStore.loadSection(
+                    for: outputURL,
+                    key: job.source.sectionKey
+                )
+            )
+        }
+
+        return Dictionary(
+            uniqueKeysWithValues: completed.compactMap { preload in
+                guard let section = preload.section else {
+                    return nil
+                }
+
+                return (
+                    preload.sourceIndex,
+                    section
+                )
+            }
+        )
+    }
+
+    func preReadSources(
+        preinspected: [
+            URL: [FileMetadataSnapshot]
+        ],
+        presafeguards: [
+            URL: ConcatenationCachedSafeguard
+        ],
+        preloadedSections: [
+            Int: ConcatenationSection
+        ],
+        cachedManifest: ConcatenationCacheManifest?,
+        concurrency: IOConcurrency
+    ) async throws -> [
+        Int: LineReadResult
+    ] {
+        let fileManager = FileManager.default
+
+        var remainingMetadata = preinspected
+        var cachedSourcesByFile: [
+            URL: [ConcatenationCachedSource]
+        ] = [:]
+
+        for cachedSource in cachedManifest?.sources ?? [] {
+            cachedSourcesByFile[
+                cachedSource.file.standardizedFileURL,
+                default: []
+            ].append(
+                cachedSource
+            )
+        }
+
+        var jobs: [ConcatenationSourceReadJob] = []
+
+        for (sourceIndex, source) in plan.sources.enumerated() {
+            let file = source.file
+
+            if protectSecrets
+                && !allowSecrets
+                && isProtectedFile(
+                    file
+                )
+            {
+                continue
+            }
+
+            guard let resolved = try? resolveSymlink(
+                at: file
+            ) else {
+                continue
+            }
+
+            let key = resolved.standardizedFileURL
+
+            guard var metadataCandidates = remainingMetadata[
+                key
+            ],
+            !metadataCandidates.isEmpty else {
+                continue
+            }
+
+            let metadata = metadataCandidates.removeFirst()
+
+            if metadataCandidates.isEmpty {
+                remainingMetadata.removeValue(
+                    forKey: key
+                )
+            } else {
+                remainingMetadata[
+                    key
+                ] = metadataCandidates
+            }
+
+            if protectSecrets
+                && !allowSecrets
+                && deepSecretInspection
+            {
+                guard let safeguard = presafeguards[
+                    key
+                ] else {
+                    continue
+                }
+
+                if safeguard.matched {
+                    continue
+                }
+            }
+
+            guard let transformationFingerprint =
+                try? sectionTransformationFingerprint(
+                    for: source,
+                    resolved: resolved,
+                    metadata: metadata,
+                    fileManager: fileManager
+                )
+            else {
+                continue
+            }
+
+            let previous = consumeCachedSource(
+                for: resolved,
+                transformationFingerprint:
+                    transformationFingerprint,
+                from: &cachedSourcesByFile
+            )
+
+            if let previous,
+               previous.metadata == metadata,
+               previous.transformationFingerprint
+                    == transformationFingerprint,
+               preloadedSections[
+                    sourceIndex
+               ] != nil {
+                continue
+            }
+
+            jobs.append(
+                .init(
+                    sourceIndex: sourceIndex,
+                    metadata: metadata
+                )
+            )
+        }
+
+        let readOptions = sourceReadOptions
+
+        let completed = try await IOExecutor(
+            concurrency: concurrency
+        ).map(
+            jobs
+        ) { job in
+            ConcatenationSourcePreread(
+                sourceIndex: job.sourceIndex,
+                result: try? LineReader(
+                    job.metadata.url
+                ).read(
+                    inspected: job.metadata,
+                    options: readOptions
+                )
+            )
+        }
+
+        return Dictionary(
+            uniqueKeysWithValues: completed.compactMap { preread in
+                guard let result = preread.result else {
+                    return nil
+                }
+
+                return (
+                    preread.sourceIndex,
+                    result
+                )
+            }
+        )
+    }
+
+    func preinspectSources(
+        concurrency: IOConcurrency
+    ) async throws -> [
+        URL: [FileMetadataSnapshot]
+    ] {
+        let resolvedSources = plan.sources.compactMap {
+            source -> URL? in
+
+            let file = source.file
+
+            if protectSecrets
+                && !allowSecrets
+                && isProtectedFile(
+                    file
+                )
+            {
+                return nil
+            }
+
+            return try? resolveSymlink(
+                at: file
+            )
+        }
+
+        let inspections = try await IOExecutor(
+            concurrency: concurrency
+        ).map(
+            resolvedSources
+        ) { resolved in
+            ConcatenationPreinspection(
+                resolved: resolved,
+                metadata: try? FileInspector(
+                    resolved
+                ).inspect()
+            )
+        }
+
+        var result: [
+            URL: [FileMetadataSnapshot]
+        ] = [:]
+
+        for inspection in inspections {
+            guard let metadata = inspection.metadata else {
+                continue
+            }
+
+            result[
+                inspection.resolved.standardizedFileURL,
+                default: []
+            ].append(
+                metadata
+            )
+        }
+
+        return result
+    }
+
+    func cacheStateMatches(
+        _ manifest: ConcatenationCacheManifest?,
+        sources: [ConcatenationCachedSource],
+        safeguards: [ConcatenationCachedSafeguard]
+    ) -> Bool {
+        guard let manifest,
+              manifest.sources.count == sources.count,
+              manifest.safeguards.count == safeguards.count else {
+            return false
+        }
+
+        for (previous, current) in zip(
+            manifest.sources,
+            sources
+        ) {
+            guard previous.metadata == current.metadata,
+                  previous.contentFingerprint
+                    == current.contentFingerprint,
+                  previous.transformationFingerprint
+                    == current.transformationFingerprint else {
+                return false
+            }
+        }
+
+        for (previous, current) in zip(
+            manifest.safeguards,
+            safeguards
+        ) {
+            guard previous.metadata == current.metadata,
+                  previous.policyFingerprint
+                    == current.policyFingerprint,
+                  previous.matched == current.matched,
+                  previous.reason == current.reason else {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    func consumeCachedSource(
+        for resolved: URL,
+        transformationFingerprint: ContentFingerprint,
+        from sourcesByFile: inout [
+            URL: [ConcatenationCachedSource]
+        ]
+    ) -> ConcatenationCachedSource? {
+        let key = resolved.standardizedFileURL
+
+        guard var candidates = sourcesByFile[key],
+              !candidates.isEmpty else {
+            return nil
+        }
+
+        let index = candidates.firstIndex {
+            $0.transformationFingerprint
+                == transformationFingerprint
+        } ?? candidates.startIndex
+
+        let source = candidates.remove(
+            at: index
+        )
+
+        if candidates.isEmpty {
+            sourcesByFile.removeValue(
+                forKey: key
+            )
+        } else {
+            sourcesByFile[key] = candidates
+        }
+
+        return source
+    }
+
+    func loadCachedSection(
+        _ source: ConcatenationCachedSource,
+        from cacheStore: ConcatenationCacheStore?
+    ) throws -> ConcatenationSection? {
+        guard let cacheStore else {
+            return nil
+        }
+
+        return try cacheStore.loadSection(
+            for: outputURL,
+            key: source.sectionKey
+        )
+    }
+
+    func saveCachedSection(
+        _ section: ConcatenationSection,
+        source: ConcatenationCachedSource,
+        to cacheStore: ConcatenationCacheStore?
+    ) throws {
+        guard let cacheStore else {
+            return
+        }
+
+        try cacheStore.saveSection(
+            section,
+            for: outputURL,
+            key: source.sectionKey
+        )
+    }
+
+    func sourceMaterialFingerprint(
+        for sources: [ConcatenationCachedSource]
+    ) throws -> ContentFingerprint {
+        let material = ConcatenationSourceMaterial(
+            version: 1,
+            sources: sources.map {
+                .init(
+                    contentFingerprint: $0.contentFingerprint,
+                    transformationFingerprint:
+                        $0.transformationFingerprint
+                )
+            }
+        )
+
+        let encoder = JSONEncoder()
+
+        encoder.outputFormatting = [
+            .sortedKeys,
+        ]
+
+        return .fingerprint(
+            for: try encoder.encode(
+                material
+            )
+        )
+    }
+
+    func artifactMaterialFingerprint(
+        for document: ConcatenationDocument
+    ) throws -> ContentFingerprint {
+        guard let sourceMaterialFingerprint =
+            document.sourceMaterialFingerprint
+        else {
+            throw ConcatenationCacheInvariantError
+                .missingSourceMaterialFingerprint
+        }
+
+        let material = ConcatenationArtifactMaterial(
+            version: 2,
+            output: outputURL.standardizedFileURL.path,
+            format: options.output.format.rawValue,
+            delimiterStyle: options.delimiter.style.rawValue,
+            delimiterClosure: options.delimiter.closure,
+            maxLinesPerFile: options.line.filemax,
+            trimBlankLines: options.line.trimblanks,
+            lineNumbers: options.line.numbers,
+            raw: options.output.raw,
+            relativePaths: options.output.relativepaths,
+            includeSourceModifiedAt: options.output.modifiedstamp,
+            obscurations: options.output.obscurations,
+            context: document.context,
+            warnings: document.warnings.map {
+                .init(
+                    kind: $0.kind.rawValue,
+                    file: $0.file.standardizedFileURL.path,
+                    message: $0.message
+                )
+            },
+            statistics: .init(
+                sourceCount: document.statistics.sourceCount,
+                renderedSectionCount:
+                    document.statistics.renderedSectionCount,
+                blockedFileCount:
+                    document.statistics.blockedFileCount,
+                truncatedSectionCount:
+                    document.statistics.truncatedSectionCount,
+                selectedLineCount:
+                    document.statistics.selectedLineCount
+            ),
+            sourceMaterialFingerprint: sourceMaterialFingerprint
+        )
+
+        let encoder = JSONEncoder()
+
+        encoder.outputFormatting = [
+            .sortedKeys,
+        ]
+
+        return .fingerprint(
+            for: try encoder.encode(
+                material
+            )
+        )
+    }
+
+    func validatedCachedArtifact(
+        materialFingerprint: ContentFingerprint
+    ) throws -> ConcatenationCachedArtifact? {
+        guard let workspace else {
+            return nil
+        }
+
+        let cacheStore = ConcatenationCacheStore(
+            workspace: workspace
+        )
+
+        guard let manifest = try cacheStore.load(
+            for: outputURL
+        ) else {
+            return nil
+        }
+
+        guard let artifact = try validatedCachedArtifact(
+            materialFingerprint: materialFingerprint,
+            manifest: manifest
+        ) else {
+            return nil
+        }
+
+        if !cachedArtifactStateMatches(
+            manifest.artifact,
+            artifact
+        ) {
+            try cacheStore.save(
+                .init(
+                    output: manifest.output,
+                    sources: manifest.sources,
+                    safeguards: manifest.safeguards,
+                    artifact: artifact
+                )
+            )
+        }
+
+        return artifact
+    }
+
+    func validatedCachedArtifact(
+        materialFingerprint: ContentFingerprint,
+        manifest: ConcatenationCacheManifest?
+    ) throws -> ConcatenationCachedArtifact? {
+        guard let artifact = manifest?.artifact,
+              artifact.materialFingerprint == materialFingerprint else {
+            return nil
+        }
+
+        let metadata = try FileInspector(
+            outputURL
+        ).inspect()
+
+        guard metadata.existed else {
+            return nil
+        }
+
+        if artifact.metadata == metadata {
+            return artifact
+        }
+
+        let readResult = try DataFileReader(
+            outputURL
+        ).read(
+            inspected: metadata,
+            options: .init(
+                missingFilePolicy: .throwError,
+                cachePolicy: .system
+            )
+        )
+
+        guard let contentFingerprint =
+            readResult
+                .fileSnapshot?
+                .contentFingerprint
+        else {
+            throw ConcatenationCacheInvariantError
+                .missingArtifactContentFingerprint(
+                    outputURL
+                )
+        }
+
+        guard contentFingerprint == artifact.contentFingerprint else {
+            return nil
+        }
+
+        return ConcatenationCachedArtifact(
+            metadata: metadata,
+            contentFingerprint: artifact.contentFingerprint,
+            materialFingerprint: artifact.materialFingerprint
+        )
+    }
+
+    func recordArtifact(
+        renderedText: String,
+        materialFingerprint: ContentFingerprint
+    ) throws {
+        guard let workspace else {
+            return
+        }
+
+        let cacheStore = ConcatenationCacheStore(
+            workspace: workspace
+        )
+
+        guard let manifest = try cacheStore.load(
+            for: outputURL
+        ) else {
+            return
+        }
+
+        let artifact = try makeCachedArtifact(
+            renderedText: renderedText,
+            materialFingerprint: materialFingerprint
+        )
+
+        try cacheStore.save(
+            .init(
+                output: manifest.output,
+                sources: manifest.sources,
+                safeguards: manifest.safeguards,
+                artifact: artifact
+            )
+        )
+    }
+
+    func makeCachedArtifact(
+        renderedText: String,
+        materialFingerprint: ContentFingerprint
+    ) throws -> ConcatenationCachedArtifact {
+        let metadata = try FileInspector(
+            outputURL
+        ).inspect()
+
+        guard metadata.existed else {
+            throw ConcatenationCacheInvariantError
+                .missingWrittenArtifact(
+                    outputURL
+                )
+        }
+
+        return .init(
+            metadata: metadata,
+            contentFingerprint: .fingerprint(
+                for: Data(
+                    renderedText.utf8
+                )
+            ),
+            materialFingerprint: materialFingerprint
+        )
+    }
+
+    func persistCachedState(
+        _ preparation: ConcatenationPreparedDocument,
+        artifact: ConcatenationCachedArtifact
+    ) throws {
+        guard let workspace,
+              let manifest = preparation.cacheManifest else {
+            return
+        }
+
+        if !preparation.cacheStateChanged,
+           cachedArtifactStateMatches(
+                manifest.artifact,
+                artifact
+           ) {
+            return
+        }
+
+        try ConcatenationCacheStore(
+            workspace: workspace
+        ).save(
+            .init(
+                output: manifest.output,
+                sources: manifest.sources,
+                safeguards: manifest.safeguards,
+                artifact: artifact
+            )
+        )
+    }
+
+    func cachedArtifactStateMatches(
+        _ previous: ConcatenationCachedArtifact?,
+        _ current: ConcatenationCachedArtifact
+    ) -> Bool {
+        guard let previous else {
+            return false
+        }
+
+        return previous.metadata == current.metadata
+            && previous.contentFingerprint
+                == current.contentFingerprint
+            && previous.materialFingerprint
+                == current.materialFingerprint
+    }
+
+    func safeguardPolicyFingerprint() throws -> ContentFingerprint {
+        let policy = ConcatenationDeepSafeguardPolicy(
+            version: 1,
+            maxPeekBytes: ConSafeguard.deepPeekBytes,
+            protectedExtensions: ConSafeguard
+                .protectedExtensions
+                .sorted(),
+            pemMarkers: ConSafeguard.pemMarkers,
+            privateKeyJSONTokens: ConSafeguard.privateKeyJsonTokens,
+            treatNullByteAsBinary: ConSafeguard.treatNullByteAsBinary
+        )
+
+        let encoder = JSONEncoder()
+
+        encoder.outputFormatting = [
+            .sortedKeys,
+        ]
+
+        return .fingerprint(
+            for: try encoder.encode(
+                policy
+            )
+        )
+    }
+
+    func sectionTransformationFingerprint(
+        for source: ConcatenationSource,
+        resolved: URL,
+        metadata: FileMetadataSnapshot,
+        fileManager: FileManager
+    ) throws -> ContentFingerprint {
+        let transformation = ConcatenationSectionTransformation(
+            version: 1,
+            presentedPath: sectionPresentedPath(
+                for: source,
+                resolved: resolved,
+                fileManager: fileManager
+            ),
+            selections: selections(
+                for: resolved
+            ),
+            trimBlankLines: options.line.trimblanks,
+            maxLinesPerFile: options.line.filemax,
+            obscurations: options.output.obscurations,
+            modifiedAt: options.output.modifiedstamp
+                ? metadata.modifiedAt
+                : nil
+        )
+
+        let encoder = JSONEncoder()
+
+        encoder.outputFormatting = [
+            .sortedKeys,
+        ]
+
+        let data = try encoder.encode(
+            transformation
+        )
+
+        return .fingerprint(
+            for: data
+        )
+    }
+
+    func sectionPresentedPath(
+        for source: ConcatenationSource,
+        resolved: URL,
+        fileManager: FileManager
+    ) -> String {
+        source.presentedPath
+            ?? displayPath(
+                for: resolved,
+                fileManager: fileManager
+            )
+    }
+
     private func displayPath(
         for resolved: URL,
         fileManager: FileManager
@@ -542,17 +2187,17 @@ private extension FileConcatenator {
     }
 
     private func sourceModifiedAtString(
-        for url: URL
+        _ date: Date?
     ) -> String? {
-        guard let values = try? url.resourceValues(
-            forKeys: [.contentModificationDateKey]
-        ),
-        let date = values.contentModificationDate else {
+        guard let date else {
             return nil
         }
 
         let formatter = ISO8601DateFormatter()
-        return formatter.string(from: date)
+
+        return formatter.string(
+            from: date
+        )
     }
 
     private func applyObscuring(

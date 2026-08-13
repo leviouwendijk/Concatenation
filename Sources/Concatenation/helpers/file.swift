@@ -21,12 +21,18 @@ public func matchesAny(_ regexes: [NSRegularExpression], url: URL) -> Bool {
     }
 }
 
-public func loadIgnoreMap(from url: URL) throws -> IgnoreMap {
+public func loadIgnoreMap(
+    from url: URL
+) throws -> IgnoreMap {
     do {
-        let raw = try String(contentsOf: url, encoding: .utf8)
-        return try ConignoreParser.parse(raw)
-    } catch let error {
-        throw ConcatError.ignoreMapLoadFailed(url: url, underlying: error)
+        return try ConignoreParser.parseFile(
+            at: url
+        )
+    } catch {
+        throw ConcatError.ignoreMapLoadFailed(
+            url: url,
+            underlying: error
+        )
     }
 }
 

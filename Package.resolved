@@ -1,5 +1,5 @@
 {
-  "originHash" : "0007b20affaf33d8510b1e0d4c03f583d9bf6fc6d16f18896af3b716cf310e14",
+  "originHash" : "7bac03ef6556917a6f6045a063b26632adc4df1cdc7dd8d680b48d983d5a041b",
   "pins" : [
     {
       "identity" : "ansi",
@@ -53,6 +53,15 @@
       "state" : {
         "branch" : "master",
         "revision" : "8b85325433aa97ee19c9c77f564500be189978d6"
+      }
+    },
+    {
+      "identity" : "io",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/IO.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "b26bf1b07dc055aab8ce00c4cd299ec37f675ffb"
       }
     },
     {
@@ -133,7 +142,7 @@
       "location" : "https://github.com/leviouwendijk/Readers.git",
       "state" : {
         "branch" : "master",
-        "revision" : "9aec5eaf7cd193202bed6c09a86f180ec1e55b6b"
+        "revision" : "c47991874555ffd0b01ec504d3ba98afde0c1677"
       }
     },
     {
@@ -142,7 +151,7 @@
       "location" : "https://github.com/leviouwendijk/Selection.git",
       "state" : {
         "branch" : "master",
-        "revision" : "02087d38d71ce0e38a43a87be62defe8240b3011"
+        "revision" : "f11816cbe5c82e2502c6b0280297e3c733957ee3"
       }
     },
     {

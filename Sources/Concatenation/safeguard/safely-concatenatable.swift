@@ -54,7 +54,7 @@ public extension SafelyConcatenatable {
         return false
     }
 
-    func deepSecretCheck(
+    static func deepSecretCheck(
         _ url: URL,
         maxPeek: Int = ConSafeguard.deepPeekBytes
     ) -> (matched: Bool, reason: String?) {

@@ -1,4 +1,6 @@
 import Foundation
+import IO
+import Writers
 
 public enum ConIgnoreError: Error, Sendable {
     case alreadyExists
@@ -18,8 +20,10 @@ public struct ConignoreInitializer {
         force: Bool = false,
         transfer: Bool = false
     ) throws {
-        let fm = FileManager.default
-        let exists = fm.fileExists(atPath: path.path)
+        let exists = FileSystem.default.exists(
+            path
+        )
+
         if exists && !force {
             throw ConIgnoreError.alreadyExists
         }
@@ -30,7 +34,14 @@ public struct ConignoreInitializer {
             template: template,
             mergingWith: existingMap
         )
-        try content.write(to: path, atomically: true, encoding: .utf8)
+        try StandardWriter(
+            path
+        ).write(
+            content,
+            options: force
+                ? .overwriteWithoutBackup
+                : .init()
+        )
     }
 
     public func printGuide() {

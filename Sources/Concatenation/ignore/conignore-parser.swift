@@ -1,4 +1,5 @@
 import Foundation
+import Readers
 
 public struct ConignoreParser {
     private enum Section {
@@ -54,8 +55,26 @@ public struct ConignoreParser {
         )
     }
 
-    public static func parseFile(at url: URL) throws -> IgnoreMap {
-        let rawContent = try String(contentsOf: url, encoding: .utf8)
-        return try parse(rawContent)
+    public static func parseFile(
+        at url: URL
+    ) throws -> IgnoreMap {
+        let rawContent = try TextFileReader(
+            url
+        ).read(
+            options: .init(
+                decoding: .exact(
+                    TextEncoding(
+                        .utf8
+                    )
+                ),
+                missingFilePolicy: .throwError,
+                newlineNormalization: .preserve,
+                cachePolicy: .system
+            )
+        ).text
+
+        return try parse(
+            rawContent
+        )
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 import Position
 
-public struct ConcatenationSection: Sendable {
+public struct ConcatenationSection: Sendable, Codable {
     public let file: URL
     public let sourcePath: String
     public let presentedPath: String
