@@ -315,6 +315,42 @@ extension ConcatenationFlowSuite {
                     "conany.execution.cold-performed-write"
                 )
 
+                try Expect.equal(
+                    cold.fileCount,
+                    2,
+                    "conany.execution.cold-file-count"
+                )
+
+                try Expect.equal(
+                    cold.renderedOutputCount,
+                    2,
+                    "conany.execution.cold-rendered-output-count"
+                )
+
+                try Expect.equal(
+                    cold.writtenOutputCount,
+                    2,
+                    "conany.execution.cold-written-output-count"
+                )
+
+                try Expect.equal(
+                    cold.reusedSourceCount,
+                    0,
+                    "conany.execution.cold-reused-source-count"
+                )
+
+                try Expect.equal(
+                    cold.cache.rebuilds,
+                    2,
+                    "conany.execution.cold-rebuild-count"
+                )
+
+                try Expect.equal(
+                    cold.executionKind,
+                    .rebuilt,
+                    "conany.execution.cold-kind"
+                )
+
                 try Expect.true(
                     FileSystem.default.exists(
                         outputA
@@ -361,6 +397,42 @@ extension ConcatenationFlowSuite {
                 try Expect.true(
                     !warm.performedWrite,
                     "conany.execution.warm-no-write"
+                )
+
+                try Expect.equal(
+                    warm.fileCount,
+                    2,
+                    "conany.execution.warm-file-count"
+                )
+
+                try Expect.equal(
+                    warm.renderedOutputCount,
+                    0,
+                    "conany.execution.warm-rendered-output-count"
+                )
+
+                try Expect.equal(
+                    warm.writtenOutputCount,
+                    0,
+                    "conany.execution.warm-written-output-count"
+                )
+
+                try Expect.equal(
+                    warm.reusedSourceCount,
+                    2,
+                    "conany.execution.warm-reused-source-count"
+                )
+
+                try Expect.equal(
+                    warm.cache.rebuilds,
+                    0,
+                    "conany.execution.warm-rebuild-count"
+                )
+
+                try Expect.equal(
+                    warm.executionKind,
+                    .unchanged,
+                    "conany.execution.warm-kind"
                 )
 
                 try Expect.true(

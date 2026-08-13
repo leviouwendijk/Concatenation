@@ -32,6 +32,7 @@ public struct FileConcatenator: SafelyConcatenatable {
     public let obscureMap: [String: String]
     public let copyToClipboard: Bool
     public let verbose: Bool
+    public let reportWarnings: Bool
 
     public let location: String?
 
@@ -61,6 +62,7 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         copyToClipboard: Bool = false,
         verbose: Bool = false,
+        reportWarnings: Bool = true,
 
         location: String? = nil,
 
@@ -96,6 +98,7 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         self.copyToClipboard = copyToClipboard
         self.verbose = verbose
+        self.reportWarnings = reportWarnings
 
         self.location = location
 
@@ -689,9 +692,11 @@ public struct FileConcatenator: SafelyConcatenatable {
     public func copy() throws -> ConcatenationRenderResult {
         let rendered = try render()
 
-        printWarnings(
-            from: rendered.document
-        )
+        if reportWarnings {
+            printWarnings(
+                from: rendered.document
+            )
+        }
 
         return copy(
             rendered
@@ -706,9 +711,11 @@ public struct FileConcatenator: SafelyConcatenatable {
             concurrency: concurrency
         )
 
-        printWarnings(
-            from: rendered.document
-        )
+        if reportWarnings {
+            printWarnings(
+                from: rendered.document
+            )
+        }
 
         return copy(
             rendered
@@ -740,7 +747,11 @@ public struct FileConcatenator: SafelyConcatenatable {
             throw error
         }
 
-        printWarnings(from: preparedDocument)
+        if reportWarnings {
+            printWarnings(
+                from: preparedDocument
+            )
+        }
 
         let materialFingerprint = try artifactMaterialFingerprint(
             for: preparedDocument
@@ -831,9 +842,11 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         let preparedDocument = preparation.document
 
-        printWarnings(
-            from: preparedDocument
-        )
+        if reportWarnings {
+            printWarnings(
+                from: preparedDocument
+            )
+        }
 
         let materialFingerprint = try artifactMaterialFingerprint(
             for: preparedDocument

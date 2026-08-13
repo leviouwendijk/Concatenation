@@ -130,7 +130,33 @@ enum ConcatAnyRunCommand: RunnableArgumentCommand {
             )
         )
 
-        let result = try await execution.write()
+        let identity = ConcatenationRunIdentity()
+
+        let verbosePresentation =
+            verboseResolution
+            || options.verboseOutput
+
+        let configuredOutputCount =
+            execution.configuration.renderables.count
+
+        let status = makeConcatenationRunStatus(
+            identity: identity,
+            outputCount: configuredOutputCount,
+            verbose: verbosePresentation
+        )
+
+        await status?.start()
+
+        let result: ConAnyWriteBatchResult
+
+        do {
+            result = try await execution.write()
+        } catch {
+            await status?.stop()
+            throw error
+        }
+
+        await status?.stop()
 
         for skipped in result.skipped {
             print(
@@ -138,27 +164,28 @@ enum ConcatAnyRunCommand: RunnableArgumentCommand {
             )
         }
 
-        for output in result.outputs {
-            printSuccess(
-                outputPath: output.resolved.outputURL.path,
-                totalLines: output.result.renderedLineCount
-            )
-        }
+        printConAnyWarnings(
+            result.warnings
+        )
 
-        if verboseResolution || options.verboseOutput {
+        if verbosePresentation {
+            for output in result.outputs {
+                printSuccess(
+                    outputPath: output.resolved.outputURL.path,
+                    totalLines: output.result.renderedLineCount
+                )
+            }
+
             printContextIndexAction(
                 result.contextIndexAction
             )
         }
 
-        if execution.configuration.renderables.count > 1 {
-            print(
-                "Done. Blocks: "
-                    + "\(execution.configuration.renderables.count), "
-                    + "total lines: "
-                    + "\(result.totalLineCount)."
-            )
-        }
+        printConAnyRunSummary(
+            result,
+            identity: identity,
+            verbose: verbosePresentation
+        )
     }
 }
 

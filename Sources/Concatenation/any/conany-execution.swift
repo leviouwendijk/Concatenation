@@ -197,6 +197,15 @@ public enum ConAnyContextIndexAction:
     case unchanged(URL)
 }
 
+public enum ConAnyExecutionKind:
+    Sendable,
+    Equatable
+{
+    case unchanged
+    case updated
+    case rebuilt
+}
+
 public struct ConAnyWriteBatchResult {
     public let outputs: [ConAnyWrittenOutput]
     public let skipped: [ConAnyResolvedOutput]
@@ -214,6 +223,87 @@ public struct ConAnyWriteBatchResult {
 
     public var outputCount: Int {
         outputs.count
+    }
+
+    public var fileCount: Int {
+        outputs.reduce(
+            0
+        ) {
+            $0 + $1.result.document.statistics.sourceCount
+        }
+    }
+
+    public var renderedOutputCount: Int {
+        outputs.reduce(
+            0
+        ) {
+            $0 + ($1.result.performedRender ? 1 : 0)
+        }
+    }
+
+    public var writtenOutputCount: Int {
+        outputs.reduce(
+            0
+        ) {
+            $0 + ($1.result.performedWrite ? 1 : 0)
+        }
+    }
+
+    public var warnings: [ConcatenationWarning] {
+        outputs.flatMap {
+            $0.result.document.warnings
+        }
+    }
+
+    public var cache: ConcatenationStatistics.Cache {
+        outputs.reduce(
+            .init()
+        ) { aggregate, output in
+            let next = output.result.document.statistics.cache
+
+            return .init(
+                metadataInspections:
+                    aggregate.metadataInspections
+                    + next.metadataInspections,
+                safeguardReads:
+                    aggregate.safeguardReads
+                    + next.safeguardReads,
+                safeguardHits:
+                    aggregate.safeguardHits
+                    + next.safeguardHits,
+                sourceReads:
+                    aggregate.sourceReads
+                    + next.sourceReads,
+                metadataHits:
+                    aggregate.metadataHits
+                    + next.metadataHits,
+                contentHits:
+                    aggregate.contentHits
+                    + next.contentHits,
+                rebuilds:
+                    aggregate.rebuilds
+                    + next.rebuilds
+            )
+        }
+    }
+
+    public var reusedSourceCount: Int {
+        cache.metadataHits
+            + cache.contentHits
+    }
+
+    public var executionKind: ConAnyExecutionKind {
+        if renderedOutputCount == 0,
+           writtenOutputCount == 0 {
+            return .unchanged
+        }
+
+        if fileCount > 0,
+           cache.rebuilds == fileCount {
+            return .rebuilt
+        }
+
+        return .updated
     }
 
     public var totalLineCount: Int {
@@ -491,6 +581,7 @@ private extension ConAnyExecution {
             obscureMap: options.ignoreMap.obscureValues,
 
             verbose: options.verboseOutput,
+            reportWarnings: false,
 
             location: outputURL.map {
                 "con any block '\(resolved.name)' → \($0.path)"

@@ -132,7 +132,7 @@ enum ConcatAnyCopyCommand:
     }
 }
 
-private func printConAnyWarnings(
+func printConAnyWarnings(
     _ warnings: [ConcatenationWarning]
 ) {
     for warning in warnings {
