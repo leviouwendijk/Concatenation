@@ -187,6 +187,21 @@ enum ConAnyPathPorting {
         using block: ConAnyIncludeBlock,
         relativeTo baseDirectory: URL
     ) throws -> String {
+        present(
+            url,
+            using: block,
+            options: try presentationOptions(
+                for: block,
+                relativeTo: baseDirectory
+            )
+        )
+    }
+
+    static func present(
+        _ url: URL,
+        using block: ConAnyIncludeBlock,
+        options: PathPresentationOptions
+    ) -> String {
         let path = StandardPath(
             fileURL: url,
             terminalHint: .file,
@@ -199,10 +214,7 @@ enum ConAnyPathPorting {
 
         default:
             return path.present(
-                try presentationOptions(
-                    for: block,
-                    relativeTo: baseDirectory
-                )
+                options
             )
         }
     }

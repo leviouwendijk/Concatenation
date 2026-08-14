@@ -88,6 +88,20 @@ public struct ConAnyResolvedOutput {
         self.presentedPathByFile = presentedPathByFile
     }
 
+    init(
+        renderable: ConAnyRenderableObject,
+        outputURL: URL,
+        standardizedFiles files: [URL],
+        selectedContentByFile: [URL: [ContentSelection]],
+        presentedPathByFile: [URL: String]
+    ) {
+        self.renderable = renderable
+        self.outputURL = outputURL.standardizedFileURL
+        self.files = files
+        self.selectedContentByFile = selectedContentByFile
+        self.presentedPathByFile = presentedPathByFile
+    }
+
     public var name: String {
         renderable.output
     }
@@ -484,34 +498,46 @@ public struct ConAnyExecution {
             let matches =
                 resolved.matches
 
-            let files = matches.map {
-                $0.url.standardizedFileURL
+            let presentationPlan =
+                resolver.presentationPlan(
+                    for: renderable
+                )
+
+            var files: [URL] = []
+            var selectedContentByFile:
+                [URL: [ContentSelection]] = [:]
+            var presentedPathByFile:
+                [URL: String] = [:]
+
+            files.reserveCapacity(
+                matches.count
+            )
+
+            selectedContentByFile.reserveCapacity(
+                matches.count
+            )
+
+            presentedPathByFile.reserveCapacity(
+                matches.count
+            )
+
+            for match in matches {
+                let url =
+                    match.url.standardizedFileURL
+
+                files.append(
+                    url
+                )
+
+                selectedContentByFile[url] =
+                    match.contentSelections
+
+                presentedPathByFile[url] =
+                    resolver.presentedPath(
+                        for: url,
+                        using: presentationPlan
+                    )
             }
-
-            let selectedContentByFile = Dictionary(
-                uniqueKeysWithValues: matches.map {
-                    match in
-
-                    (
-                        match.url.standardizedFileURL,
-                        match.contentSelections
-                    )
-                }
-            )
-
-            let presentedPathByFile = Dictionary(
-                uniqueKeysWithValues: matches.map {
-                    match in
-
-                    (
-                        match.url.standardizedFileURL,
-                        resolver.presentedPath(
-                            for: match.url,
-                            in: renderable
-                        )
-                    )
-                }
-            )
 
             outputs.append(
                 ConAnyResolvedOutput(
@@ -519,7 +545,7 @@ public struct ConAnyExecution {
                     outputURL: resolver.outputURL(
                         for: renderable
                     ),
-                    files: files,
+                    standardizedFiles: files,
                     selectedContentByFile:
                         selectedContentByFile,
                     presentedPathByFile:

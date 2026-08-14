@@ -97,18 +97,31 @@ public struct ConAnyResolverBatchResult: Sendable {
     }
 }
 
+struct ConAnyPresentationPlan {
+    let candidates: [ConAnyPresentationCandidate]
+}
+
+struct ConAnyPresentationCandidate {
+    let block: ConAnyIncludeBlock
+    let basePath: String?
+    let options: PathPresentationOptions?
+
+    var rank: Int {
+        basePath?.count ?? -1
+    }
+}
+
 public struct ConAnyResolver {
-    private let baseDir: String
+    private let baseDirectory: URL
 
     public init(
         baseDir: String
     ) {
-        self.baseDir = URL(
+        self.baseDirectory = URL(
             fileURLWithPath: baseDir,
             isDirectory: true
         )
         .standardizedFileURL
-        .path
     }
 
     public func resolveResults(
@@ -118,12 +131,6 @@ public struct ConAnyResolver {
         ignoreMap: IgnoreMap? = nil,
         verbose: Bool = false
     ) throws -> ConAnyResolverBatchResult {
-        let baseDirectory = URL(
-            fileURLWithPath: baseDir,
-            isDirectory: true
-        )
-        .standardizedFileURL
-
         if verbose {
             print(
                 "ConAny resolving \(renderables.count) outputs in \(baseDirectory.path)"
@@ -374,11 +381,77 @@ public struct ConAnyResolver {
     ) -> URL {
         ConAnyPathPorting.outputURL(
             for: renderable.output,
-            relativeTo: URL(
-                fileURLWithPath: baseDir,
-                isDirectory: true
+            relativeTo: baseDirectory
+        )
+    }
+
+    func presentationPlan(
+        for renderable: ConAnyRenderableObject
+    ) -> ConAnyPresentationPlan {
+        let candidates = renderable.includeBlocks.map {
+            block in
+
+            let resolvedBaseURL =
+                try? ConAnyPathPorting.resolvedBaseURL(
+                    for: block,
+                    relativeTo: baseDirectory
+                )
+
+            let basePath =
+                resolvedBaseURL?.standardizedFileURL.path
+
+            let options =
+                try? ConAnyPathPorting.presentationOptions(
+                    for: block,
+                    relativeTo: baseDirectory
+                )
+
+            return ConAnyPresentationCandidate(
+                block: block,
+                basePath: basePath,
+                options: options
             )
-            .standardizedFileURL
+        }
+        .sorted {
+            $0.rank > $1.rank
+        }
+
+        return .init(
+            candidates: candidates
+        )
+    }
+
+    func presentedPath(
+        for url: URL,
+        using plan: ConAnyPresentationPlan
+    ) -> String {
+        let standardizedURL =
+            url.standardizedFileURL
+
+        let targetPath = standardizedURL.path
+
+        guard let candidate = plan.candidates.first(
+            where: {
+                candidate in
+
+                guard let basePath = candidate.basePath else {
+                    return true
+                }
+
+                return targetPath == basePath
+                    || targetPath.hasPrefix(
+                        basePath + "/"
+                    )
+            }
+        ),
+              let options = candidate.options else {
+            return url.path
+        }
+
+        return ConAnyPathPorting.present(
+            standardizedURL,
+            using: candidate.block,
+            options: options
         )
     }
 
@@ -386,59 +459,11 @@ public struct ConAnyResolver {
         for url: URL,
         in renderable: ConAnyRenderableObject
     ) -> String {
-        let baseDirectory = URL(
-            fileURLWithPath: baseDir,
-            isDirectory: true
-        )
-        .standardizedFileURL
-
-        guard let block = bestIncludeBlock(
+        presentedPath(
             for: url,
-            in: renderable,
-            relativeTo: baseDirectory
-        ) else {
-            return url.path
-        }
-
-        return (try? ConAnyPathPorting.present(
-            url.standardizedFileURL,
-            using: block,
-            relativeTo: baseDirectory
-        )) ?? url.path
-    }
-}
-
-private extension ConAnyResolver {
-    func bestIncludeBlock(
-        for url: URL,
-        in renderable: ConAnyRenderableObject,
-        relativeTo baseDirectory: URL
-    ) -> ConAnyIncludeBlock? {
-        let standardizedURL = url.standardizedFileURL
-
-        let candidates = renderable.includeBlocks.compactMap {
-            block -> (ConAnyIncludeBlock, Int)? in
-            if let baseURL = try? ConAnyPathPorting.resolvedBaseURL(
-                for: block,
-                relativeTo: baseDirectory
-            ) {
-                let basePath = baseURL.standardizedFileURL.path
-                let targetPath = standardizedURL.path
-
-                guard targetPath == basePath
-                    || targetPath.hasPrefix(basePath + "/") else {
-                    return nil
-                }
-
-                return (block, basePath.count)
-            }
-
-            return (block, -1)
-        }
-
-        return candidates
-            .sorted { $0.1 > $1.1 }
-            .first?
-            .0
+            using: presentationPlan(
+                for: renderable
+            )
+        )
     }
 }
