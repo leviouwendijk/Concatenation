@@ -3,12 +3,12 @@
   "failed_names" : [
 
   ],
-  "generated_at" : "2026-08-14T12:41:48Z",
+  "generated_at" : "2026-08-14T12:48:13Z",
   "passed" : 5,
   "results" : [
     {
       "display_name" : "con-legacy-migration",
-      "duration_seconds" : 0.0022319555282592773,
+      "duration_seconds" : 0.0022710561752319336,
       "name" : "con-legacy-migration",
       "status" : "passed",
       "tags" : [
@@ -20,7 +20,7 @@
     },
     {
       "display_name" : "con-any-nesting",
-      "duration_seconds" : 0.020045995712280273,
+      "duration_seconds" : 0.012385010719299316,
       "name" : "con-any-nesting",
       "status" : "passed",
       "tags" : [
@@ -32,7 +32,7 @@
     },
     {
       "display_name" : "con-any-execution",
-      "duration_seconds" : 0.03395390510559082,
+      "duration_seconds" : 0.019801974296569824,
       "name" : "con-any-execution",
       "status" : "passed",
       "tags" : [
@@ -45,7 +45,7 @@
     },
     {
       "display_name" : "con-cache",
-      "duration_seconds" : 0.33737802505493164,
+      "duration_seconds" : 0.3362990617752075,
       "name" : "con-cache",
       "status" : "passed",
       "tags" : [
@@ -56,7 +56,7 @@
     },
     {
       "display_name" : "con-cache-stress",
-      "duration_seconds" : 1.5082290172576904,
+      "duration_seconds" : 1.4733550548553467,
       "name" : "con-cache-stress",
       "status" : "passed",
       "tags" : [
