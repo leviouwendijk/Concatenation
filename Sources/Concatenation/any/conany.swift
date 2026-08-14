@@ -33,15 +33,20 @@ public struct ConAnyResolverBatchResult: Sendable {
     public let results: [ConAnyResolverResult]
     public let logicalTraversalCount: Int
     public let physicalTraversalCount: Int
+    public let physicalTraversals:
+        [PathScanPhysicalTraversalStatistics]
 
     public init(
         results: [ConAnyResolverResult],
         logicalTraversalCount: Int,
-        physicalTraversalCount: Int
+        physicalTraversalCount: Int,
+        physicalTraversals:
+            [PathScanPhysicalTraversalStatistics] = []
     ) {
         self.results = results
         self.logicalTraversalCount = logicalTraversalCount
         self.physicalTraversalCount = physicalTraversalCount
+        self.physicalTraversals = physicalTraversals
     }
 }
 
@@ -163,7 +168,9 @@ public struct ConAnyResolver {
             logicalTraversalCount:
                 batch.logicalTraversalCount,
             physicalTraversalCount:
-                batch.physicalTraversalCount
+                batch.physicalTraversalCount,
+            physicalTraversals:
+                batch.physicalTraversals
         )
     }
 

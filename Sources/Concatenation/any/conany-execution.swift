@@ -1,6 +1,7 @@
 import Clipboard
 import Foundation
 import IO
+import Path
 import Selection
 
 public struct ConAnyExecutionOptions {
@@ -146,6 +147,8 @@ public struct ConAnyResolutionStatistics:
     public let scanRequestCount: Int
     public let plannedTraversalCount: Int
     public let physicalTraversalCount: Int
+    public let physicalTraversals:
+        [PathScanPhysicalTraversalStatistics]
     public let uniqueRoots: [URL]
     public let matchedOutputCount: Int
     public let unmatchedOutputCount: Int
@@ -155,6 +158,8 @@ public struct ConAnyResolutionStatistics:
         scanRequestCount: Int = 0,
         plannedTraversalCount: Int = 0,
         physicalTraversalCount: Int = 0,
+        physicalTraversals:
+            [PathScanPhysicalTraversalStatistics] = [],
         uniqueRoots: [URL] = [],
         matchedOutputCount: Int = 0,
         unmatchedOutputCount: Int = 0
@@ -163,6 +168,7 @@ public struct ConAnyResolutionStatistics:
         self.scanRequestCount = scanRequestCount
         self.plannedTraversalCount = plannedTraversalCount
         self.physicalTraversalCount = physicalTraversalCount
+        self.physicalTraversals = physicalTraversals
 
         self.uniqueRoots = Array(
             Set(
@@ -535,6 +541,8 @@ public struct ConAnyExecution {
                     resolverBatch.logicalTraversalCount,
                 physicalTraversalCount:
                     resolverBatch.physicalTraversalCount,
+                physicalTraversals:
+                    resolverBatch.physicalTraversals,
                 uniqueRoots:
                     plannedTraversalRoots,
                 matchedOutputCount:

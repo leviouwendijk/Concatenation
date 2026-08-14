@@ -150,6 +150,60 @@ func printConAnyRunSummary(
             + " · \(formattedCount(result.resolution.unmatchedOutputCount)) unmatched"
     )
 
+    let slowestPhysicalTraversals =
+        result
+        .resolution
+        .physicalTraversals
+        .sorted {
+            lhs,
+            rhs in
+
+            if lhs.duration != rhs.duration {
+                return lhs.duration
+                    > rhs.duration
+            }
+
+            if lhs.entryCount != rhs.entryCount {
+                return lhs.entryCount
+                    > rhs.entryCount
+            }
+
+            return lhs.root.path
+                < rhs.root.path
+        }
+        .prefix(
+            8
+        )
+
+    if result.resolution.duration >= 0.5,
+       !slowestPhysicalTraversals.isEmpty {
+        print(
+            "  slowest physical walks:"
+        )
+
+        for walk in slowestPhysicalTraversals {
+            let entryWord =
+                walk.entryCount == 1
+                    ? "entry"
+                    : "entries"
+
+            let logicalRootWord =
+                walk.logicalRootCount == 1
+                    ? "logical root"
+                    : "logical roots"
+
+            print(
+                "    "
+                    + formattedDuration(
+                        walk.duration
+                    )
+                    + " · \(formattedCount(walk.entryCount)) \(entryWord)"
+                    + " · \(formattedCount(walk.logicalRootCount)) \(logicalRootWord)"
+                    + " · \(walk.root.path)"
+            )
+        }
+    }
+
     print(
         "  cache: "
             + "\(formattedCount(result.reusedSourceCount)) reused"

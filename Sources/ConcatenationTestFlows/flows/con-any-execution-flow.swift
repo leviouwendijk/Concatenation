@@ -174,6 +174,21 @@ extension ConcatenationFlowSuite {
                     "conany.execution.resolution-has-physical-traversals"
                 )
 
+                try Expect.equal(
+                    resolvedBatch.statistics.physicalTraversals.count,
+                    resolvedBatch.statistics.physicalTraversalCount,
+                    "conany.execution.resolution-physical-statistics-count"
+                )
+
+                try Expect.true(
+                    resolvedBatch.statistics.physicalTraversals.allSatisfy {
+                        $0.duration >= 0
+                            && $0.entryCount >= 0
+                            && $0.logicalRootCount > 0
+                    },
+                    "conany.execution.resolution-physical-statistics-valid"
+                )
+
                 try Expect.true(
                     resolvedBatch.statistics.duration >= 0,
                     "conany.execution.resolution-duration"
