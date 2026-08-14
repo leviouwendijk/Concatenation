@@ -143,8 +143,9 @@ func printConAnyRunSummary(
             + formattedDuration(
                 result.resolution.duration
             )
-            + " · \(formattedCount(result.resolution.scanRequestCount)) scans"
-            + " · \(formattedCount(result.resolution.plannedTraversalCount)) planned traversals"
+            + " · \(formattedCount(result.resolution.scanRequestCount)) specs"
+            + " · \(formattedCount(result.resolution.plannedTraversalCount)) logical traversals"
+            + " · \(formattedCount(result.resolution.physicalTraversalCount)) physical traversals"
             + " · \(formattedCount(result.resolution.uniqueRootCount)) unique roots"
             + " · \(formattedCount(result.resolution.unmatchedOutputCount)) unmatched"
     )

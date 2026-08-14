@@ -158,6 +158,23 @@ extension ConcatenationFlowSuite {
                 )
 
                 try Expect.true(
+                    resolvedBatch.statistics.physicalTraversalCount
+                        <= resolvedBatch.statistics.plannedTraversalCount,
+                    "conany.execution.resolution-physical-below-logical"
+                )
+
+                try Expect.true(
+                    resolvedBatch.statistics.physicalTraversalCount
+                        <= resolvedBatch.statistics.uniqueRootCount,
+                    "conany.execution.resolution-physical-below-roots"
+                )
+
+                try Expect.true(
+                    resolvedBatch.statistics.physicalTraversalCount > 0,
+                    "conany.execution.resolution-has-physical-traversals"
+                )
+
+                try Expect.true(
                     resolvedBatch.statistics.duration >= 0,
                     "conany.execution.resolution-duration"
                 )

@@ -29,6 +29,22 @@ public struct ConAnyResolverResult: Sendable {
     }
 }
 
+public struct ConAnyResolverBatchResult: Sendable {
+    public let results: [ConAnyResolverResult]
+    public let logicalTraversalCount: Int
+    public let physicalTraversalCount: Int
+
+    public init(
+        results: [ConAnyResolverResult],
+        logicalTraversalCount: Int,
+        physicalTraversalCount: Int
+    ) {
+        self.results = results
+        self.logicalTraversalCount = logicalTraversalCount
+        self.physicalTraversalCount = physicalTraversalCount
+    }
+}
+
 public struct ConAnyResolver {
     private let baseDir: String
 
@@ -43,13 +59,13 @@ public struct ConAnyResolver {
         .path
     }
 
-    public func resolveResult(
-        _ renderable: ConAnyRenderableObject,
+    public func resolveResults(
+        _ renderables: [ConAnyRenderableObject],
         maxDepth: Int? = nil,
         includeDotfiles: Bool = false,
         ignoreMap: IgnoreMap? = nil,
         verbose: Bool = false
-    ) throws -> ConAnyResolverResult {
+    ) throws -> ConAnyResolverBatchResult {
         let baseDirectory = URL(
             fileURLWithPath: baseDir,
             isDirectory: true
@@ -58,17 +74,21 @@ public struct ConAnyResolver {
 
         if verbose {
             print(
-                "ConAny resolving in \(baseDirectory.path)"
+                "ConAny resolving \(renderables.count) outputs in \(baseDirectory.path)"
             )
         }
 
-        let prepared = try ConAnyPathPorting.prepareScan(
-            from: renderable,
-            relativeTo: baseDirectory
-        )
+        let prepared = try renderables.map {
+            try ConAnyPathPorting.prepareScan(
+                from: $0,
+                relativeTo: baseDirectory
+            )
+        }
 
-        let result = try SelectionScan.scan(
-            prepared.specification,
+        let batch = try SelectionScan.scan(
+            prepared.map(
+                \.specification
+            ),
             relativeTo: .directoryURL(
                 baseDirectory
             ),
@@ -81,37 +101,110 @@ public struct ConAnyResolver {
             )
         )
 
-        if verbose {
-            for match in result.matches {
+        precondition(
+            batch.results.count
+                == renderables.count
+        )
+
+        var results: [ConAnyResolverResult] = []
+
+        results.reserveCapacity(
+            renderables.count
+        )
+
+        for index in renderables.indices {
+            let renderable = renderables[index]
+            let result = batch.results[index]
+
+            if verbose {
                 print(
-                    "match: \(match.url.path)"
+                    "output: \(renderable.output)"
                 )
 
+                for match in result.matches {
+                    print(
+                        "match: \(match.url.path)"
+                    )
+
+                    print(
+                        "  selections: \(match.contentSelections)"
+                    )
+                }
+            }
+
+            if verbose,
+               !result.warnings.isEmpty {
                 print(
-                    "  selections: \(match.contentSelections)"
+                    "SelectionScan warnings: \(result.warnings)"
                 )
             }
-        }
 
-        if verbose,
-           !result.warnings.isEmpty {
-            print(
-                "SelectionScan warnings: \(result.warnings)"
+            let matches = try filteredMatches(
+                result.matches,
+                ignoreMap: ignoreMap
+            )
+
+            results.append(
+                .init(
+                    matches: matches,
+                    plannedTraversalRoots:
+                        prepared[index]
+                        .plan
+                        .traversals
+                        .map(
+                            \.root
+                        )
+                )
             )
         }
 
-        var matches = result.matches
+        return .init(
+            results: results,
+            logicalTraversalCount:
+                batch.logicalTraversalCount,
+            physicalTraversalCount:
+                batch.physicalTraversalCount
+        )
+    }
 
-        let filteredURLs = try ConAnyPathPorting.applyStaticIgnoreDefaults(
-            to: matches.map(
-                \.url
+    public func resolveResult(
+        _ renderable: ConAnyRenderableObject,
+        maxDepth: Int? = nil,
+        includeDotfiles: Bool = false,
+        ignoreMap: IgnoreMap? = nil,
+        verbose: Bool = false
+    ) throws -> ConAnyResolverResult {
+        let batch = try resolveResults(
+            [renderable],
+            maxDepth: maxDepth,
+            includeDotfiles: includeDotfiles,
+            ignoreMap: ignoreMap,
+            verbose: verbose
+        )
+
+        return batch.results[0]
+    }
+
+    private func filteredMatches(
+        _ input: [SelectionScanMatch],
+        ignoreMap: IgnoreMap?
+    ) throws -> [SelectionScanMatch] {
+        var matches = input
+
+        let filteredURLs =
+            try ConAnyPathPorting
+            .applyStaticIgnoreDefaults(
+                to: matches.map(
+                    \.url
+                )
             )
-        )
 
-        let ignoreFilteredURLs = ConAnyPathPorting.applyIgnoreMap(
-            ignoreMap,
-            to: filteredURLs
-        )
+        let ignoreFilteredURLs =
+            ConAnyPathPorting
+            .applyIgnoreMap(
+                ignoreMap,
+                to: filteredURLs
+            )
 
         let allowed = Set(
             ignoreFilteredURLs.map(
@@ -129,14 +222,9 @@ public struct ConAnyResolver {
             matches
         )
 
-        return .init(
-            matches: matches.sorted {
-                $0.url.path < $1.url.path
-            },
-            plannedTraversalRoots: prepared.plan.traversals.map(
-                \.root
-            )
-        )
+        return matches.sorted {
+            $0.url.path < $1.url.path
+        }
     }
 
     public func resolveMatches(

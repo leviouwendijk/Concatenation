@@ -145,6 +145,7 @@ public struct ConAnyResolutionStatistics:
     public let duration: TimeInterval
     public let scanRequestCount: Int
     public let plannedTraversalCount: Int
+    public let physicalTraversalCount: Int
     public let uniqueRoots: [URL]
     public let matchedOutputCount: Int
     public let unmatchedOutputCount: Int
@@ -153,6 +154,7 @@ public struct ConAnyResolutionStatistics:
         duration: TimeInterval = 0,
         scanRequestCount: Int = 0,
         plannedTraversalCount: Int = 0,
+        physicalTraversalCount: Int = 0,
         uniqueRoots: [URL] = [],
         matchedOutputCount: Int = 0,
         unmatchedOutputCount: Int = 0
@@ -160,6 +162,7 @@ public struct ConAnyResolutionStatistics:
         self.duration = duration
         self.scanRequestCount = scanRequestCount
         self.plannedTraversalCount = plannedTraversalCount
+        self.physicalTraversalCount = physicalTraversalCount
 
         self.uniqueRoots = Array(
             Set(
@@ -432,34 +435,43 @@ public struct ConAnyExecution {
             baseDir: configDirectory.path
         )
 
+        let resolverBatch = try resolver.resolveResults(
+            configuration.renderables,
+            maxDepth: options.maxDepth,
+            includeDotfiles: options.includeDotfiles,
+            ignoreMap: options.ignoreMap,
+            verbose: options.verboseResolution
+        )
+
+        precondition(
+            resolverBatch.results.count
+                == configuration.renderables.count
+        )
+
         var outputs: [ConAnyResolvedOutput] = []
-        var plannedTraversalRoots: [URL] = []
 
         outputs.reserveCapacity(
             configuration.renderables.count
         )
 
-        for renderable in configuration.renderables {
-            let resolved = try resolver.resolveResult(
-                renderable,
-                maxDepth: options.maxDepth,
-                includeDotfiles: options.includeDotfiles,
-                ignoreMap: options.ignoreMap,
-                verbose: options.verboseResolution
-            )
+        for index in configuration.renderables.indices {
+            let renderable =
+                configuration.renderables[index]
 
-            plannedTraversalRoots.append(
-                contentsOf: resolved.plannedTraversalRoots
-            )
+            let resolved =
+                resolverBatch.results[index]
 
-            let matches = resolved.matches
+            let matches =
+                resolved.matches
 
             let files = matches.map {
                 $0.url.standardizedFileURL
             }
 
             let selectedContentByFile = Dictionary(
-                uniqueKeysWithValues: matches.map { match in
+                uniqueKeysWithValues: matches.map {
+                    match in
+
                     (
                         match.url.standardizedFileURL,
                         match.contentSelections
@@ -468,7 +480,9 @@ public struct ConAnyExecution {
             )
 
             let presentedPathByFile = Dictionary(
-                uniqueKeysWithValues: matches.map { match in
+                uniqueKeysWithValues: matches.map {
+                    match in
+
                     (
                         match.url.standardizedFileURL,
                         resolver.presentedPath(
@@ -486,11 +500,20 @@ public struct ConAnyExecution {
                         for: renderable
                     ),
                     files: files,
-                    selectedContentByFile: selectedContentByFile,
-                    presentedPathByFile: presentedPathByFile
+                    selectedContentByFile:
+                        selectedContentByFile,
+                    presentedPathByFile:
+                        presentedPathByFile
                 )
             )
         }
+
+        let plannedTraversalRoots =
+            resolverBatch
+            .results
+            .flatMap(
+                \.plannedTraversalRoots
+            )
 
         let matchedOutputCount = outputs.reduce(
             0
@@ -506,10 +529,16 @@ public struct ConAnyExecution {
             outputs: outputs,
             statistics: .init(
                 duration: duration,
-                scanRequestCount: configuration.renderables.count,
-                plannedTraversalCount: plannedTraversalRoots.count,
-                uniqueRoots: plannedTraversalRoots,
-                matchedOutputCount: matchedOutputCount,
+                scanRequestCount:
+                    configuration.renderables.count,
+                plannedTraversalCount:
+                    resolverBatch.logicalTraversalCount,
+                physicalTraversalCount:
+                    resolverBatch.physicalTraversalCount,
+                uniqueRoots:
+                    plannedTraversalRoots,
+                matchedOutputCount:
+                    matchedOutputCount,
                 unmatchedOutputCount:
                     outputs.count
                     - matchedOutputCount
