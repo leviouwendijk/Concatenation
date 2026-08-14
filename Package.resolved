@@ -61,7 +61,7 @@
       "location" : "https://github.com/leviouwendijk/IO.git",
       "state" : {
         "branch" : "master",
-        "revision" : "b26bf1b07dc055aab8ce00c4cd299ec37f675ffb"
+        "revision" : "11fffb1fa112fd87d8487110695e18ea5db95a5c"
       }
     },
     {
@@ -106,7 +106,7 @@
       "location" : "https://github.com/leviouwendijk/Path.git",
       "state" : {
         "branch" : "master",
-        "revision" : "eb60ebceaa9aad67ecb3bef0c195fb1ffc76f9bb"
+        "revision" : "c82f8d75c541b8ea2ab168d0b36e2823269e9de0"
       }
     },
     {
