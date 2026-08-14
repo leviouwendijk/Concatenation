@@ -190,6 +190,19 @@ public struct ConAnyResolver {
         var filteringDuration:
             TimeInterval = 0
 
+        let filteringPreparationStartedAt =
+            Date()
+
+        let staticIgnoreRegexes =
+            try compilePatterns(
+                StaticIgnoreDefaults.allPatterns
+            )
+
+        filteringDuration +=
+            Date().timeIntervalSince(
+                filteringPreparationStartedAt
+            )
+
         var results: [ConAnyResolverResult] = []
 
         results.reserveCapacity(
@@ -225,8 +238,10 @@ public struct ConAnyResolver {
 
             let filteringStartedAt = Date()
 
-            let matches = try filteredMatches(
+            let matches = filteredMatches(
                 result.matches,
+                staticIgnoreRegexes:
+                    staticIgnoreRegexes,
                 ignoreMap: ignoreMap
             )
 
@@ -304,43 +319,80 @@ public struct ConAnyResolver {
 
     private func filteredMatches(
         _ input: [SelectionScanMatch],
+        staticIgnoreRegexes:
+            [NSRegularExpression],
         ignoreMap: IgnoreMap?
-    ) throws -> [SelectionScanMatch] {
-        var matches = input
+    ) -> [SelectionScanMatch] {
+        var matches: [SelectionScanMatch] = []
+        var indexByURL: [URL: Int] = [:]
 
-        let filteredURLs =
-            try ConAnyPathPorting
-            .applyStaticIgnoreDefaults(
-                to: matches.map(
-                    \.url
-                )
-            )
-
-        let ignoreFilteredURLs =
-            ConAnyPathPorting
-            .applyIgnoreMap(
-                ignoreMap,
-                to: filteredURLs
-            )
-
-        let allowed = Set(
-            ignoreFilteredURLs.map(
-                \.standardizedFileURL
-            )
+        matches.reserveCapacity(
+            input.count
         )
 
-        matches = matches.filter {
-            allowed.contains(
-                $0.url.standardizedFileURL
-            )
+        indexByURL.reserveCapacity(
+            input.count
+        )
+
+        for match in input {
+            let url =
+                match.url
+
+            if matchesAny(
+                staticIgnoreRegexes,
+                url: url
+            ) {
+                continue
+            }
+
+            if ignoreMap?.shouldIgnore(
+                url
+            ) == true {
+                continue
+            }
+
+            if let existingIndex =
+                indexByURL[url]
+            {
+                let existing =
+                    matches[existingIndex]
+
+                let mergedSelections =
+                    existing
+                    .contentSelections
+                    + match
+                    .contentSelections
+                    .filter {
+                        selection in
+
+                        !existing
+                            .contentSelections
+                            .contains(
+                                selection
+                            )
+                    }
+
+                matches[existingIndex] =
+                    SelectionScanMatch(
+                        url: existing.url,
+                        path: existing.path,
+                        type: existing.type,
+                        contentSelections:
+                            mergedSelections
+                    )
+            } else {
+                indexByURL[url] =
+                    matches.count
+
+                matches.append(
+                    match
+                )
+            }
         }
 
-        matches = ConAnyPathPorting.deduplicated(
-            matches
-        )
-
         return matches.sorted {
-            $0.url.path < $1.url.path
+            $0.url.path
+                < $1.url.path
         }
     }
 
@@ -450,6 +502,48 @@ public struct ConAnyResolver {
 
         return ConAnyPathPorting.present(
             standardizedURL,
+            using: candidate.block,
+            options: options
+        )
+    }
+
+    func presentedPath(
+        for match: SelectionScanMatch,
+        using plan: ConAnyPresentationPlan
+    ) -> String {
+        let url =
+            match.url
+
+        let targetPath =
+            url.path
+
+        guard let candidate =
+            plan.candidates.first(
+                where: {
+                    candidate in
+
+                    guard let basePath =
+                        candidate.basePath
+                    else {
+                        return true
+                    }
+
+                    return targetPath
+                        == basePath
+                        || targetPath.hasPrefix(
+                            basePath + "/"
+                        )
+                }
+            ),
+              let options =
+                candidate.options
+        else {
+            return targetPath
+        }
+
+        return ConAnyPathPorting.present(
+            match.path,
+            url: url,
             using: candidate.block,
             options: options
         )
