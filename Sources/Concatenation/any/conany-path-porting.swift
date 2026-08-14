@@ -202,15 +202,28 @@ enum ConAnyPathPorting {
         using block: ConAnyIncludeBlock,
         options: PathPresentationOptions
     ) -> String {
-        let path = StandardPath(
-            fileURL: url,
-            terminalHint: .file,
-            inferFileType: true
+        present(
+            StandardPath(
+                fileURL: url,
+                terminalHint: .file,
+                inferFileType: true
+            ),
+            url: url,
+            using: block,
+            options: options
         )
+    }
 
+    static func present(
+        _ path: StandardPath,
+        url: URL,
+        using block: ConAnyIncludeBlock,
+        options: PathPresentationOptions
+    ) -> String {
         switch block.show {
         case .basename:
-            return path.basename ?? url.lastPathComponent
+            return path.basename
+                ?? url.lastPathComponent
 
         default:
             return path.present(

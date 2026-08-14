@@ -523,7 +523,7 @@ public struct ConAnyExecution {
 
             for match in matches {
                 let url =
-                    match.url.standardizedFileURL
+                    match.url
 
                 files.append(
                     url
@@ -534,7 +534,7 @@ public struct ConAnyExecution {
 
                 presentedPathByFile[url] =
                     resolver.presentedPath(
-                        for: url,
+                        for: match,
                         using: presentationPlan
                     )
             }
