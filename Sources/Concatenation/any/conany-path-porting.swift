@@ -6,11 +6,6 @@ import SelectionParsing
 import Partition
 
 enum ConAnyPathPorting {
-    struct PreparedScan {
-        let specification: SelectionScanSpecification
-        let plan: CompiledPathScanPlan
-    }
-
     static func makeSpecification(
         from renderable: ConAnyRenderableObject,
         relativeTo baseDirectory: URL
@@ -24,39 +19,6 @@ enum ConAnyPathPorting {
             includes: parts.includes,
             excludes: parts.excludes,
             selections: parts.selections
-        )
-    }
-
-    static func prepareScan(
-        from renderable: ConAnyRenderableObject,
-        relativeTo baseDirectory: URL
-    ) throws -> PreparedScan {
-        let parts = try specificationParts(
-            from: renderable,
-            relativeTo: baseDirectory
-        )
-
-        let specification = SelectionScanSpecification(
-            includes: parts.includes,
-            excludes: parts.excludes,
-            selections: parts.selections
-        )
-
-        let plan = PathScan.compile(
-            PathScanSpecification(
-                includes:
-                    parts.includes
-                    + parts.selections.map(\.path),
-                excludes: parts.excludes
-            ),
-            relativeTo: .directoryURL(
-                baseDirectory
-            )
-        )
-
-        return .init(
-            specification: specification,
-            plan: plan
         )
     }
 

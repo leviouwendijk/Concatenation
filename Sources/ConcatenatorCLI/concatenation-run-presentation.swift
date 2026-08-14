@@ -150,6 +150,55 @@ func printConAnyRunSummary(
             + " · \(formattedCount(result.resolution.unmatchedOutputCount)) unmatched"
     )
 
+    if result.resolution.duration >= 0.5 {
+        let resolver =
+            result.resolution.resolver
+
+        let selection =
+            resolver.selection
+
+        let pathStages =
+            selection.path
+
+        let measuredDuration =
+            resolver.specificationDuration
+            + resolver.compilationDuration
+            + pathStages.planningDuration
+            + pathStages.walkingDuration
+            + pathStages.dispatchDuration
+            + pathStages.resultConstructionDuration
+            + selection.resultConstructionDuration
+            + resolver.filteringDuration
+            + resolver.assemblyDuration
+            + result.resolution.outputAssemblyDuration
+
+        let otherDuration =
+            max(
+                0,
+                result.resolution.duration
+                    - measuredDuration
+            )
+
+        print(
+            "  stages: "
+                + "spec \(formattedDuration(resolver.specificationDuration))"
+                + " · compile \(formattedDuration(resolver.compilationDuration))"
+                + " · path plan \(formattedDuration(pathStages.planningDuration))"
+                + " · walk \(formattedDuration(pathStages.walkingDuration))"
+        )
+
+        print(
+            "          "
+                + "dispatch \(formattedDuration(pathStages.dispatchDuration))"
+                + " · path results \(formattedDuration(pathStages.resultConstructionDuration))"
+                + " · selection \(formattedDuration(selection.resultConstructionDuration))"
+                + " · filter \(formattedDuration(resolver.filteringDuration))"
+                + " · resolver \(formattedDuration(resolver.assemblyDuration))"
+                + " · output \(formattedDuration(result.resolution.outputAssemblyDuration))"
+                + " · other \(formattedDuration(otherDuration))"
+        )
+    }
+
     let slowestPhysicalTraversals =
         result
         .resolution

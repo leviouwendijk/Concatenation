@@ -190,6 +190,15 @@ extension ConcatenationFlowSuite {
                 )
 
                 try Expect.true(
+                    resolvedBatch.statistics.resolver.totalDuration >= 0
+                        && resolvedBatch.statistics.resolver.specificationDuration >= 0
+                        && resolvedBatch.statistics.resolver.compilationDuration >= 0
+                        && resolvedBatch.statistics.resolver.selection.path.totalDuration >= 0
+                        && resolvedBatch.statistics.outputAssemblyDuration >= 0,
+                    "conany.execution.resolution-stage-statistics-valid"
+                )
+
+                try Expect.true(
                     resolvedBatch.statistics.duration >= 0,
                     "conany.execution.resolution-duration"
                 )

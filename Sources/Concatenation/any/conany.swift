@@ -29,24 +29,71 @@ public struct ConAnyResolverResult: Sendable {
     }
 }
 
+public struct ConAnyResolverStatistics:
+    Sendable,
+    Equatable
+{
+    public let totalDuration: TimeInterval
+    public let specificationDuration:
+        TimeInterval
+    public let compilationDuration:
+        TimeInterval
+    public let selection:
+        SelectionScanBatchStatistics
+    public let filteringDuration:
+        TimeInterval
+    public let assemblyDuration:
+        TimeInterval
+
+    public init(
+        totalDuration: TimeInterval = 0,
+        specificationDuration:
+            TimeInterval = 0,
+        compilationDuration:
+            TimeInterval = 0,
+        selection:
+            SelectionScanBatchStatistics = .init(),
+        filteringDuration:
+            TimeInterval = 0,
+        assemblyDuration:
+            TimeInterval = 0
+    ) {
+        self.totalDuration = totalDuration
+        self.specificationDuration =
+            specificationDuration
+        self.compilationDuration =
+            compilationDuration
+        self.selection = selection
+        self.filteringDuration =
+            filteringDuration
+        self.assemblyDuration =
+            assemblyDuration
+    }
+}
+
 public struct ConAnyResolverBatchResult: Sendable {
     public let results: [ConAnyResolverResult]
     public let logicalTraversalCount: Int
     public let physicalTraversalCount: Int
     public let physicalTraversals:
         [PathScanPhysicalTraversalStatistics]
+    public let statistics:
+        ConAnyResolverStatistics
 
     public init(
         results: [ConAnyResolverResult],
         logicalTraversalCount: Int,
         physicalTraversalCount: Int,
         physicalTraversals:
-            [PathScanPhysicalTraversalStatistics] = []
+            [PathScanPhysicalTraversalStatistics] = [],
+        statistics:
+            ConAnyResolverStatistics = .init()
     ) {
         self.results = results
         self.logicalTraversalCount = logicalTraversalCount
         self.physicalTraversalCount = physicalTraversalCount
         self.physicalTraversals = physicalTraversals
+        self.statistics = statistics
     }
 }
 
@@ -83,20 +130,40 @@ public struct ConAnyResolver {
             )
         }
 
-        let prepared = try renderables.map {
-            try ConAnyPathPorting.prepareScan(
+        let startedAt = Date()
+
+        let specificationStartedAt = Date()
+
+        let specifications = try renderables.map {
+            try ConAnyPathPorting.makeSpecification(
                 from: $0,
                 relativeTo: baseDirectory
             )
         }
 
+        let specificationDuration =
+            Date().timeIntervalSince(
+                specificationStartedAt
+            )
+
+        let compilationStartedAt = Date()
+
+        let plans = specifications.map {
+            SelectionScan.compile(
+                $0,
+                relativeTo: .directoryURL(
+                    baseDirectory
+                )
+            )
+        }
+
+        let compilationDuration =
+            Date().timeIntervalSince(
+                compilationStartedAt
+            )
+
         let batch = try SelectionScan.scan(
-            prepared.map(
-                \.specification
-            ),
-            relativeTo: .directoryURL(
-                baseDirectory
-            ),
+            plans,
             configuration: .init(
                 maxDepth: maxDepth,
                 includeHidden: includeDotfiles,
@@ -110,6 +177,11 @@ public struct ConAnyResolver {
             batch.results.count
                 == renderables.count
         )
+
+        let postScanStartedAt = Date()
+
+        var filteringDuration:
+            TimeInterval = 0
 
         var results: [ConAnyResolverResult] = []
 
@@ -144,24 +216,39 @@ public struct ConAnyResolver {
                 )
             }
 
+            let filteringStartedAt = Date()
+
             let matches = try filteredMatches(
                 result.matches,
                 ignoreMap: ignoreMap
             )
 
+            filteringDuration +=
+                Date().timeIntervalSince(
+                    filteringStartedAt
+                )
+
             results.append(
                 .init(
                     matches: matches,
                     plannedTraversalRoots:
-                        prepared[index]
-                        .plan
-                        .traversals
-                        .map(
-                            \.root
-                        )
+                        plans[index]
+                        .traversalRoots
                 )
             )
         }
+
+        let postScanDuration =
+            Date().timeIntervalSince(
+                postScanStartedAt
+            )
+
+        let assemblyDuration =
+            max(
+                0,
+                postScanDuration
+                    - filteringDuration
+            )
 
         return .init(
             results: results,
@@ -170,7 +257,23 @@ public struct ConAnyResolver {
             physicalTraversalCount:
                 batch.physicalTraversalCount,
             physicalTraversals:
-                batch.physicalTraversals
+                batch.physicalTraversals,
+            statistics: .init(
+                totalDuration:
+                    Date().timeIntervalSince(
+                        startedAt
+                    ),
+                specificationDuration:
+                    specificationDuration,
+                compilationDuration:
+                    compilationDuration,
+                selection:
+                    batch.statistics,
+                filteringDuration:
+                    filteringDuration,
+                assemblyDuration:
+                    assemblyDuration
+            )
         )
     }
 

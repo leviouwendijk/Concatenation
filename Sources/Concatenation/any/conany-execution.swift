@@ -149,6 +149,10 @@ public struct ConAnyResolutionStatistics:
     public let physicalTraversalCount: Int
     public let physicalTraversals:
         [PathScanPhysicalTraversalStatistics]
+    public let resolver:
+        ConAnyResolverStatistics
+    public let outputAssemblyDuration:
+        TimeInterval
     public let uniqueRoots: [URL]
     public let matchedOutputCount: Int
     public let unmatchedOutputCount: Int
@@ -160,6 +164,10 @@ public struct ConAnyResolutionStatistics:
         physicalTraversalCount: Int = 0,
         physicalTraversals:
             [PathScanPhysicalTraversalStatistics] = [],
+        resolver:
+            ConAnyResolverStatistics = .init(),
+        outputAssemblyDuration:
+            TimeInterval = 0,
         uniqueRoots: [URL] = [],
         matchedOutputCount: Int = 0,
         unmatchedOutputCount: Int = 0
@@ -169,6 +177,9 @@ public struct ConAnyResolutionStatistics:
         self.plannedTraversalCount = plannedTraversalCount
         self.physicalTraversalCount = physicalTraversalCount
         self.physicalTraversals = physicalTraversals
+        self.resolver = resolver
+        self.outputAssemblyDuration =
+            outputAssemblyDuration
 
         self.uniqueRoots = Array(
             Set(
@@ -454,6 +465,9 @@ public struct ConAnyExecution {
                 == configuration.renderables.count
         )
 
+        let outputAssemblyStartedAt =
+            Date()
+
         var outputs: [ConAnyResolvedOutput] = []
 
         outputs.reserveCapacity(
@@ -527,6 +541,11 @@ public struct ConAnyExecution {
             $0 + ($1.isEmpty ? 0 : 1)
         }
 
+        let outputAssemblyDuration =
+            Date().timeIntervalSince(
+                outputAssemblyStartedAt
+            )
+
         let duration = Date().timeIntervalSince(
             startedAt
         )
@@ -543,6 +562,10 @@ public struct ConAnyExecution {
                     resolverBatch.physicalTraversalCount,
                 physicalTraversals:
                     resolverBatch.physicalTraversals,
+                resolver:
+                    resolverBatch.statistics,
+                outputAssemblyDuration:
+                    outputAssemblyDuration,
                 uniqueRoots:
                     plannedTraversalRoots,
                 matchedOutputCount:
