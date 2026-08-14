@@ -185,6 +185,11 @@ extension ConcatenationFlowSuite {
                         $0.duration >= 0
                             && $0.entryCount >= 0
                             && $0.logicalRootCount > 0
+                            && $0.directoryEnumerationDuration >= 0
+                            && $0.childSortingDuration >= 0
+                            && $0.metadataInspectionDuration >= 0
+                            && $0.bookkeepingDuration >= 0
+                            && $0.resultSortingDuration >= 0
                     },
                     "conany.execution.resolution-physical-statistics-valid"
                 )

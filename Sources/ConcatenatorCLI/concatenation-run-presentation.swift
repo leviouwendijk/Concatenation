@@ -199,6 +199,71 @@ func printConAnyRunSummary(
         )
     }
 
+    if result.resolution.duration >= 0.5 {
+        let physicalWalks =
+            result
+            .resolution
+            .physicalTraversals
+
+        let enumerationDuration =
+            physicalWalks.reduce(
+                0
+            ) {
+                $0
+                    + $1
+                    .directoryEnumerationDuration
+            }
+
+        let inspectionDuration =
+            physicalWalks.reduce(
+                0
+            ) {
+                $0
+                    + $1
+                    .metadataInspectionDuration
+            }
+
+        let childSortingDuration =
+            physicalWalks.reduce(
+                0
+            ) {
+                $0
+                    + $1
+                    .childSortingDuration
+            }
+
+        let bookkeepingDuration =
+            physicalWalks.reduce(
+                0
+            ) {
+                $0
+                    + $1
+                    .bookkeepingDuration
+            }
+
+        let resultSortingDuration =
+            physicalWalks.reduce(
+                0
+            ) {
+                $0
+                    + $1
+                    .resultSortingDuration
+            }
+
+        print(
+            "  walk detail: "
+                + "enumerate \(formattedDuration(enumerationDuration))"
+                + " · inspect \(formattedDuration(inspectionDuration))"
+                + " · child sort \(formattedDuration(childSortingDuration))"
+        )
+
+        print(
+            "               "
+                + "bookkeeping \(formattedDuration(bookkeepingDuration))"
+                + " · final sort \(formattedDuration(resultSortingDuration))"
+        )
+    }
+
     let slowestPhysicalTraversals =
         result
         .resolution
