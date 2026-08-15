@@ -473,11 +473,15 @@ public enum ConAnyExecutionError:
     LocalizedError
 {
     case noOutputs
+    case outputCollision(URL)
 
     public var errorDescription: String? {
         switch self {
         case .noOutputs:
             return "No .conany outputs contained matching files."
+
+        case .outputCollision(let url):
+            return "Multiple .conany outputs resolve to the same destination: \(url.path)"
         }
     }
 }
@@ -515,6 +519,10 @@ public struct ConAnyExecution {
 
         let resolver = ConAnyResolver(
             baseDir: configDirectory.path
+        )
+
+        let outputURLs = try validatedOutputURLs(
+            using: resolver
         )
 
         let resolverBatch = try resolver.resolveResults(
@@ -593,9 +601,8 @@ public struct ConAnyExecution {
             outputs.append(
                 ConAnyResolvedOutput(
                     renderable: renderable,
-                    outputURL: resolver.outputURL(
-                        for: renderable
-                    ),
+                    outputURL:
+                        outputURLs[index],
                     standardizedFiles: files,
                     selectedContentByFile:
                         selectedContentByFile,
@@ -838,6 +845,46 @@ public struct ConAnyExecution {
 }
 
 private extension ConAnyExecution {
+    func validatedOutputURLs(
+        using resolver: ConAnyResolver
+    ) throws -> [URL] {
+        let count =
+            configuration.renderables.count
+
+        var outputURLs: [URL] = []
+        var seenPaths: Set<String> = []
+
+        outputURLs.reserveCapacity(
+            count
+        )
+
+        seenPaths.reserveCapacity(
+            count
+        )
+
+        for renderable in configuration.renderables {
+            let outputURL =
+                resolver.outputURL(
+                    for: renderable
+                )
+                .standardizedFileURL
+
+            guard seenPaths.insert(
+                outputURL.path
+            ).inserted else {
+                throw ConAnyExecutionError.outputCollision(
+                    outputURL
+                )
+            }
+
+            outputURLs.append(
+                outputURL
+            )
+        }
+
+        return outputURLs
+    }
+
     var configDirectory: URL {
         configURL
             .deletingLastPathComponent()

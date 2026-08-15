@@ -274,6 +274,62 @@ extension ConcatenationFlowSuite {
                     "conany.nesting.warm-no-write"
                 )
             }
+            Step("resolved output collisions fail before source resolution") {
+                let root =
+                    FileManager.default
+                    .temporaryDirectory
+                    .appendingPathComponent(
+                        "conany-output-collision-\(UUID().uuidString)",
+                        isDirectory: true
+                    )
+                    .standardizedFileURL
+
+                let configuration = try ConAnyParser.parse(
+                    """
+                    directory("nested") {
+                        file("same.txt") {
+                        }
+                    }
+
+                    file("nested/./same.txt") {
+                    }
+                    """
+                )
+
+                let execution = ConAnyExecution(
+                    configURL:
+                        root.appendingPathComponent(
+                            ".conany",
+                            isDirectory: false
+                        ),
+                    configuration:
+                        configuration
+                )
+
+                let expected =
+                    root.appendingPathComponent(
+                        "nested/same.txt",
+                        isDirectory: false
+                    )
+                    .standardizedFileURL
+
+                var collision: URL?
+
+                do {
+                    _ = try execution.resolveBatch()
+                } catch ConAnyExecutionError.outputCollision(
+                    let url
+                ) {
+                    collision = url
+                }
+
+                try Expect.equal(
+                    collision,
+                    expected,
+                    "conany.nesting.output-collision"
+                )
+            }
+
         }
     }
 }
