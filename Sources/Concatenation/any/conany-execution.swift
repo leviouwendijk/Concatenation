@@ -299,22 +299,63 @@ public enum ConAnyExecutionKind:
     case rebuilt
 }
 
+public struct ConAnyWriteStatistics:
+    Sendable,
+    Equatable
+{
+    public let duration: TimeInterval
+    public let resolutionDuration: TimeInterval
+    public let outputDuration: TimeInterval
+    public let contextIndexDuration: TimeInterval
+
+    public init(
+        duration: TimeInterval = 0,
+        resolutionDuration: TimeInterval = 0,
+        outputDuration: TimeInterval = 0,
+        contextIndexDuration: TimeInterval = 0
+    ) {
+        self.duration = duration
+        self.resolutionDuration =
+            resolutionDuration
+        self.outputDuration =
+            outputDuration
+        self.contextIndexDuration =
+            contextIndexDuration
+    }
+
+    public var measuredDuration: TimeInterval {
+        resolutionDuration
+            + outputDuration
+            + contextIndexDuration
+    }
+
+    public var otherDuration: TimeInterval {
+        max(
+            0,
+            duration - measuredDuration
+        )
+    }
+}
+
 public struct ConAnyWriteBatchResult {
     public let outputs: [ConAnyWrittenOutput]
     public let skipped: [ConAnyResolvedOutput]
     public let contextIndexAction: ConAnyContextIndexAction
     public let resolution: ConAnyResolutionStatistics
+    public let statistics: ConAnyWriteStatistics
 
     public init(
         outputs: [ConAnyWrittenOutput],
         skipped: [ConAnyResolvedOutput],
         contextIndexAction: ConAnyContextIndexAction,
-        resolution: ConAnyResolutionStatistics = .init()
+        resolution: ConAnyResolutionStatistics = .init(),
+        statistics: ConAnyWriteStatistics = .init()
     ) {
         self.outputs = outputs
         self.skipped = skipped
         self.contextIndexAction = contextIndexAction
         self.resolution = resolution
+        self.statistics = statistics
     }
 
     public var outputCount: Int {
@@ -407,6 +448,16 @@ public struct ConAnyWriteBatchResult {
             0
         ) {
             $0 + $1.result.renderedLineCount
+        }
+    }
+
+    public var outputStatistics:
+        ConcatenationWriteStatistics
+    {
+        outputs.reduce(
+            .init()
+        ) {
+            $0 + $1.result.statistics
         }
     }
 
@@ -669,8 +720,22 @@ public struct ConAnyExecution {
     public func write(
         concurrency: IOConcurrency = .automatic
     ) async throws -> ConAnyWriteBatchResult {
+        let startedAt =
+            Date()
+
+        let resolutionStartedAt =
+            Date()
+
         let resolvedBatch = try resolveBatch()
         let resolved = resolvedBatch.outputs
+
+        let resolutionDuration =
+            Date().timeIntervalSince(
+                resolutionStartedAt
+            )
+
+        let outputStartedAt =
+            Date()
 
         let workspace = ConcatenationWorkspace(
             configuration: configURL
@@ -728,22 +793,48 @@ public struct ConAnyExecution {
             )
         }
 
+        let outputDuration =
+            Date().timeIntervalSince(
+                outputStartedAt
+            )
+
         let refreshContextIndex = outputs.contains {
             $0.result.performedWrite
         }
+
+        let contextIndexStartedAt =
+            Date()
 
         let contextIndexAction = try updateContextIndex(
             collectedContexts: collectedContexts,
             refresh: refreshContextIndex
         )
 
+        let contextIndexDuration =
+            Date().timeIntervalSince(
+                contextIndexStartedAt
+            )
+
         return .init(
             outputs: outputs,
             skipped: skipped,
             contextIndexAction: contextIndexAction,
-            resolution: resolvedBatch.statistics
+            resolution: resolvedBatch.statistics,
+            statistics: .init(
+                duration:
+                    Date().timeIntervalSince(
+                        startedAt
+                    ),
+                resolutionDuration:
+                    resolutionDuration,
+                outputDuration:
+                    outputDuration,
+                contextIndexDuration:
+                    contextIndexDuration
+            )
         )
     }
+
 }
 
 private extension ConAnyExecution {

@@ -109,16 +109,20 @@ func printConAnyRunSummary(
     verbose: Bool
 ) {
     let state: String
+    let stateStyle: TerminalStyle
 
     switch result.executionKind {
     case .unchanged:
         state = "Unchanged"
+        stateStyle = .init(.green, .bold)
 
     case .updated:
         state = "Updated"
+        stateStyle = .init(.cyan, .bold)
 
     case .rebuilt:
         state = "Rebuilt"
+        stateStyle = .init(.yellow, .bold)
     }
 
     let outputWord =
@@ -131,24 +135,80 @@ func printConAnyRunSummary(
             ? "file"
             : "files"
 
-    print(
-        "✓ \(state)"
-            + " · \(formattedCount(result.outputCount)) \(outputWord)"
-            + " · \(formattedCount(result.fileCount)) \(fileWord)"
-            + " · \(formattedCount(result.totalLineCount)) lines"
+    let isTerminal =
+        isatty(
+            STDOUT_FILENO
+        ) == 1
+
+    let theme: TerminalTheme =
+        isTerminal
+            ? TerminalTheme(
+                heading: .bold,
+                label: .init(.brightBlack),
+                value: .none,
+                caption: .init(.brightBlack)
+            )
+            : .plain
+
+    let layout = TerminalBlockLayout(
+        fieldIndent: 2,
+        labelWidth: .minimum(16),
+        labelValueSpacing: 2,
+        blankLinesAfter: 0
     )
 
-    print(
-        "  resolution: "
-            + formattedDuration(
-                result.resolution.duration
-            )
-            + " · \(formattedCount(result.resolution.scanRequestCount)) specs"
-            + " · \(formattedCount(result.resolution.plannedTraversalCount)) logical traversals"
-            + " · \(formattedCount(result.resolution.physicalTraversalCount)) physical traversals"
-            + " · \(formattedCount(result.resolution.uniqueRootCount)) unique roots"
-            + " · \(formattedCount(result.resolution.unmatchedOutputCount)) unmatched"
-    )
+    let width = Terminal.size(
+        for: .standardOutput
+    ).columns
+
+    let styledState =
+        isTerminal
+            ? stateStyle.apply(state)
+            : state
+
+    var sections: [TerminalDetailSection] = [
+        .init(
+            title: "Resolution",
+            items: [
+                .field(
+                    label: "total",
+                    value: formattedDuration(
+                        result.resolution.duration
+                    )
+                ),
+                .field(
+                    label: "specs",
+                    value: formattedCount(
+                        result.resolution.scanRequestCount
+                    )
+                ),
+                .field(
+                    label: "logical",
+                    value: formattedCount(
+                        result.resolution.plannedTraversalCount
+                    )
+                ),
+                .field(
+                    label: "physical",
+                    value: formattedCount(
+                        result.resolution.physicalTraversalCount
+                    )
+                ),
+                .field(
+                    label: "unique roots",
+                    value: formattedCount(
+                        result.resolution.uniqueRootCount
+                    )
+                ),
+                .field(
+                    label: "unmatched",
+                    value: formattedCount(
+                        result.resolution.unmatchedOutputCount
+                    )
+                ),
+            ]
+        )
+    ]
 
     if result.resolution.duration >= 0.5 {
         let resolver =
@@ -179,166 +239,608 @@ func printConAnyRunSummary(
                     - measuredDuration
             )
 
-        print(
-            "  stages: "
-                + "spec \(formattedDuration(resolver.specificationDuration))"
-                + " · compile \(formattedDuration(resolver.compilationDuration))"
-                + " · path plan \(formattedDuration(pathStages.planningDuration))"
-                + " · walk \(formattedDuration(pathStages.walkingDuration))"
+        sections.append(
+            .init(
+                title: "Resolver stages",
+                items: [
+                    .field(
+                        label: "spec",
+                        value: formattedDuration(
+                            resolver.specificationDuration
+                        )
+                    ),
+                    .field(
+                        label: "compile",
+                        value: formattedDuration(
+                            resolver.compilationDuration
+                        )
+                    ),
+                    .field(
+                        label: "path plan",
+                        value: formattedDuration(
+                            pathStages.planningDuration
+                        )
+                    ),
+                    .field(
+                        label: "walk",
+                        value: formattedDuration(
+                            pathStages.walkingDuration
+                        )
+                    ),
+                    .field(
+                        label: "dispatch",
+                        value: formattedDuration(
+                            pathStages.dispatchDuration
+                        )
+                    ),
+                    .field(
+                        label: "path results",
+                        value: formattedDuration(
+                            pathStages.resultConstructionDuration
+                        )
+                    ),
+                    .field(
+                        label: "selection",
+                        value: formattedDuration(
+                            selection.resultConstructionDuration
+                        )
+                    ),
+                    .field(
+                        label: "filter",
+                        value: formattedDuration(
+                            resolver.filteringDuration
+                        )
+                    ),
+                    .field(
+                        label: "resolver",
+                        value: formattedDuration(
+                            resolver.assemblyDuration
+                        )
+                    ),
+                    .field(
+                        label: "output",
+                        value: formattedDuration(
+                            result.resolution.outputAssemblyDuration
+                        )
+                    ),
+                    .field(
+                        label: "other",
+                        value: formattedDuration(
+                            otherDuration
+                        )
+                    ),
+                ]
+            )
         )
 
-        print(
-            "          "
-                + "dispatch \(formattedDuration(pathStages.dispatchDuration))"
-                + " · path results \(formattedDuration(pathStages.resultConstructionDuration))"
-                + " · selection \(formattedDuration(selection.resultConstructionDuration))"
-                + " · filter \(formattedDuration(resolver.filteringDuration))"
-                + " · resolver \(formattedDuration(resolver.assemblyDuration))"
-                + " · output \(formattedDuration(result.resolution.outputAssemblyDuration))"
-                + " · other \(formattedDuration(otherDuration))"
-        )
-    }
-
-    if result.resolution.duration >= 0.5 {
         let physicalWalks =
             result
             .resolution
             .physicalTraversals
 
         let enumerationDuration =
-            physicalWalks.reduce(
-                0
-            ) {
-                $0
-                    + $1
-                    .directoryEnumerationDuration
+            physicalWalks.reduce(0) {
+                $0 + $1.directoryEnumerationDuration
             }
 
         let inspectionDuration =
-            physicalWalks.reduce(
-                0
-            ) {
-                $0
-                    + $1
-                    .metadataInspectionDuration
+            physicalWalks.reduce(0) {
+                $0 + $1.metadataInspectionDuration
             }
 
         let childSortingDuration =
-            physicalWalks.reduce(
-                0
-            ) {
-                $0
-                    + $1
-                    .childSortingDuration
+            physicalWalks.reduce(0) {
+                $0 + $1.childSortingDuration
             }
 
         let bookkeepingDuration =
-            physicalWalks.reduce(
-                0
-            ) {
-                $0
-                    + $1
-                    .bookkeepingDuration
+            physicalWalks.reduce(0) {
+                $0 + $1.bookkeepingDuration
             }
 
         let resultSortingDuration =
-            physicalWalks.reduce(
-                0
-            ) {
-                $0
-                    + $1
-                    .resultSortingDuration
+            physicalWalks.reduce(0) {
+                $0 + $1.resultSortingDuration
             }
 
-        print(
-            "  walk detail: "
-                + "enumerate \(formattedDuration(enumerationDuration))"
-                + " · inspect \(formattedDuration(inspectionDuration))"
-                + " · child sort \(formattedDuration(childSortingDuration))"
-        )
+        let slowestPhysicalTraversals =
+            physicalWalks
+            .sorted {
+                lhs,
+                rhs in
 
-        print(
-            "               "
-                + "bookkeeping \(formattedDuration(bookkeepingDuration))"
-                + " · final sort \(formattedDuration(resultSortingDuration))"
-        )
-    }
+                if lhs.duration != rhs.duration {
+                    return lhs.duration
+                        > rhs.duration
+                }
 
-    let slowestPhysicalTraversals =
-        result
-        .resolution
-        .physicalTraversals
-        .sorted {
-            lhs,
-            rhs in
+                if lhs.entryCount != rhs.entryCount {
+                    return lhs.entryCount
+                        > rhs.entryCount
+                }
 
-            if lhs.duration != rhs.duration {
-                return lhs.duration
-                    > rhs.duration
+                return lhs.root.path
+                    < rhs.root.path
             }
+            .prefix(8)
 
-            if lhs.entryCount != rhs.entryCount {
-                return lhs.entryCount
-                    > rhs.entryCount
-            }
+        var walkItems: [TerminalDetailItem] = [
+            .field(
+                label: "total",
+                value: formattedDuration(
+                    pathStages.walkingDuration
+                )
+            ),
+            .field(
+                label: "enumerate",
+                value: formattedDuration(
+                    enumerationDuration
+                )
+            ),
+            .field(
+                label: "inspect",
+                value: formattedDuration(
+                    inspectionDuration
+                )
+            ),
+            .field(
+                label: "child sort",
+                value: formattedDuration(
+                    childSortingDuration
+                )
+            ),
+            .field(
+                label: "bookkeeping",
+                value: formattedDuration(
+                    bookkeepingDuration
+                )
+            ),
+            .field(
+                label: "final sort",
+                value: formattedDuration(
+                    resultSortingDuration
+                )
+            ),
+        ]
 
-            return lhs.root.path
-                < rhs.root.path
-        }
-        .prefix(
-            8
-        )
+        if !slowestPhysicalTraversals.isEmpty {
+            walkItems.append(
+                .list(
+                    label: "slowest",
+                    values: slowestPhysicalTraversals.map { walk in
+                        let entryWord =
+                            walk.entryCount == 1
+                                ? "entry"
+                                : "entries"
 
-    if result.resolution.duration >= 0.5,
-       !slowestPhysicalTraversals.isEmpty {
-        print(
-            "  slowest physical walks:"
-        )
+                        let logicalRootWord =
+                            walk.logicalRootCount == 1
+                                ? "logical root"
+                                : "logical roots"
 
-        for walk in slowestPhysicalTraversals {
-            let entryWord =
-                walk.entryCount == 1
-                    ? "entry"
-                    : "entries"
-
-            let logicalRootWord =
-                walk.logicalRootCount == 1
-                    ? "logical root"
-                    : "logical roots"
-
-            print(
-                "    "
-                    + formattedDuration(
-                        walk.duration
-                    )
-                    + " · \(formattedCount(walk.entryCount)) \(entryWord)"
-                    + " · \(formattedCount(walk.logicalRootCount)) \(logicalRootWord)"
-                    + " · \(walk.root.path)"
+                        return formattedDuration(
+                            walk.duration
+                        )
+                            + " · \(formattedCount(walk.entryCount)) \(entryWord)"
+                            + " · \(formattedCount(walk.logicalRootCount)) \(logicalRootWord)"
+                            + " · \(walk.root.path)"
+                    }
+                )
             )
         }
+
+        sections.append(
+            .init(
+                title: "Path walk",
+                items: walkItems
+            )
+        )
     }
 
-    print(
-        "  cache: "
-            + "\(formattedCount(result.reusedSourceCount)) reused"
-            + " · \(formattedCount(result.cache.rebuilds)) rebuilt"
-            + " · \(formattedCount(result.cache.sourceReads)) source reads"
-            + " · \(formattedCount(result.writtenOutputCount)) outputs written"
-    )
+    var cacheItems: [TerminalDetailItem] = [
+        .field(
+            label: "reused",
+            value: formattedCount(
+                result.reusedSourceCount
+            )
+        ),
+        .field(
+            label: "rebuilt",
+            value: formattedCount(
+                result.cache.rebuilds
+            )
+        ),
+        .field(
+            label: "source reads",
+            value: formattedCount(
+                result.cache.sourceReads
+            )
+        ),
+        .field(
+            label: "outputs rendered",
+            value: formattedCount(
+                result.renderedOutputCount
+            )
+        ),
+        .field(
+            label: "outputs written",
+            value: formattedCount(
+                result.writtenOutputCount
+            )
+        ),
+    ]
 
     if verbose {
-        print(
-            "  cache detail: "
-                + "\(formattedCount(result.cache.metadataHits)) metadata hits"
-                + " · \(formattedCount(result.cache.contentHits)) content hits"
-                + " · \(formattedCount(result.cache.metadataInspections)) inspections"
+        cacheItems.append(
+            contentsOf: [
+                .field(
+                    label: "metadata hits",
+                    value: formattedCount(
+                        result.cache.metadataHits
+                    )
+                ),
+                .field(
+                    label: "content hits",
+                    value: formattedCount(
+                        result.cache.contentHits
+                    )
+                ),
+                .field(
+                    label: "inspections",
+                    value: formattedCount(
+                        result.cache.metadataInspections
+                    )
+                ),
+                .field(
+                    label: "safeguard hits",
+                    value: formattedCount(
+                        result.cache.safeguardHits
+                    )
+                ),
+                .field(
+                    label: "safeguard reads",
+                    value: formattedCount(
+                        result.cache.safeguardReads
+                    )
+                ),
+            ]
         )
+    }
+
+    sections.append(
+        .init(
+            title: "Cache",
+            items: cacheItems
+        )
+    )
+
+    let execution =
+        result.statistics
+
+    sections.append(
+        .init(
+            title: "Execution",
+            items: [
+                .field(
+                    label: "total",
+                    value: formattedDuration(
+                        execution.duration
+                    )
+                ),
+                .field(
+                    label: "resolution",
+                    value: formattedDuration(
+                        execution.resolutionDuration
+                    )
+                ),
+                .field(
+                    label: "outputs",
+                    value: formattedDuration(
+                        execution.outputDuration
+                    )
+                ),
+                .field(
+                    label: "context",
+                    value: formattedDuration(
+                        execution.contextIndexDuration
+                    )
+                ),
+                .field(
+                    label: "other",
+                    value: formattedDuration(
+                        execution.otherDuration
+                    )
+                ),
+            ]
+        )
+    )
+
+    let outputWork =
+        result.outputStatistics
+
+    var outputItems: [TerminalDetailItem] = [
+        .field(
+            label: "prepare",
+            value: formattedDuration(
+                outputWork.preparation.duration
+            )
+        ),
+        .field(
+            label: "fingerprint",
+            value: formattedDuration(
+                outputWork.artifactFingerprintDuration
+            )
+        ),
+        .field(
+            label: "artifact check",
+            value: formattedDuration(
+                outputWork.artifactValidationDuration
+            )
+        ),
+        .field(
+            label: "render",
+            value: formattedDuration(
+                outputWork.renderDuration
+            )
+        ),
+        .field(
+            label: "write",
+            value: formattedDuration(
+                outputWork.outputWriteDuration
+            )
+        ),
+        .field(
+            label: "artifact record",
+            value: formattedDuration(
+                outputWork.artifactCreationDuration
+            )
+        ),
+        .field(
+            label: "cache persist",
+            value: formattedDuration(
+                outputWork.cachePersistenceDuration
+            )
+        ),
+    ]
+
+    if outputWork.clipboardDuration > 0
+        || verbose
+    {
+        outputItems.append(
+            .field(
+                label: "clipboard",
+                value: formattedDuration(
+                    outputWork.clipboardDuration
+                )
+            )
+        )
+    }
+
+    outputItems.append(
+        .field(
+            label: "other",
+            value: formattedDuration(
+                outputWork.otherDuration
+            )
+        )
+    )
+
+    sections.append(
+        .init(
+            title: "Output pipeline",
+            items: outputItems
+        )
+    )
+
+    let preparation =
+        outputWork.preparation
+
+    sections.append(
+        .init(
+            title: "Preparation",
+            items: [
+                .field(
+                    label: "total",
+                    value: formattedDuration(
+                        preparation.duration
+                    )
+                ),
+                .field(
+                    label: "manifest",
+                    value: formattedDuration(
+                        preparation.cacheLoadDuration
+                    )
+                ),
+                .field(
+                    label: "inspect",
+                    value: formattedDuration(
+                        preparation.sourceInspectionDuration
+                    )
+                ),
+                .field(
+                    label: "safeguard",
+                    value: formattedDuration(
+                        preparation.safeguardDuration
+                    )
+                ),
+                .field(
+                    label: "section load",
+                    value: formattedDuration(
+                        preparation.sectionPreloadDuration
+                    )
+                ),
+                .field(
+                    label: "preread",
+                    value: formattedDuration(
+                        preparation.sourcePrereadDuration
+                    )
+                ),
+                .field(
+                    label: "assemble",
+                    value: formattedDuration(
+                        preparation.assemblyDuration
+                    )
+                ),
+                .field(
+                    label: "other",
+                    value: formattedDuration(
+                        preparation.otherDuration
+                    )
+                ),
+            ]
+        )
+    )
+
+    for section in sections {
+        print(
+            section.render(
+                width: width,
+                theme: theme,
+                layout: layout
+            ),
+            terminator: ""
+        )
+    }
+
+    let sourceActivityEdges:
+        [TerminalRelationshipGraph.Edge] =
+            result.outputs.flatMap {
+                output
+                    -> [TerminalRelationshipGraph.Edge] in
+            var orderedSources: [URL] = []
+
+            var activityBySource: [
+                URL:
+                    ConcatenationSourceActivity.Kind
+            ] = [:]
+
+            for activity
+                in output.result.sourceActivities
+            {
+                let source =
+                    activity
+                    .source
+                    .standardizedFileURL
+
+                if activityBySource[source] == nil {
+                    orderedSources.append(
+                        source
+                    )
+                }
+
+                if activity.kind == .rebuilt
+                    || activityBySource[source] == nil
+                {
+                    activityBySource[source] =
+                        activity.kind
+                }
+            }
+
+            return orderedSources.compactMap {
+                source
+                    -> TerminalRelationshipGraph.Edge? in
+                guard let activity =
+                    activityBySource[source]
+                else {
+                    return nil
+                }
+
+                let presentedSource =
+                    output
+                    .resolved
+                    .presentedPathByFile[source]
+                    ?? source.path
+
+                let activityLabel: String
+
+                switch activity {
+                case .reread:
+                    activityLabel =
+                        "reread"
+
+                case .rebuilt:
+                    activityLabel =
+                        "rebuilt"
+                }
+
+                return TerminalRelationshipGraph.Edge(
+                    input:
+                        presentedSource
+                        + " ["
+                        + activityLabel
+                        + "]",
+                    output:
+                        output.resolved.name
+                )
+            }
+        }
+
+    if !sourceActivityEdges.isEmpty {
+        let sourceCount =
+            Set(
+                sourceActivityEdges.map {
+                    edge in
+
+                    edge.input
+                }
+            ).count
+
+        let outputCount =
+            Set(
+                sourceActivityEdges.map {
+                    edge in
+
+                    edge.output
+                }
+            ).count
+
+        print()
+
+        let heading =
+            "Source activity"
+            + " · \(formattedCount(sourceCount)) "
+            + (
+                sourceCount == 1
+                    ? "source"
+                    : "sources"
+            )
+            + " → \(formattedCount(outputCount)) "
+            + (
+                outputCount == 1
+                    ? "output"
+                    : "outputs"
+            )
 
         print(
-            "                "
-                + "\(formattedCount(result.cache.safeguardHits)) safeguard hits"
-                + " · \(formattedCount(result.cache.safeguardReads)) safeguard reads"
-                + " · \(formattedCount(result.renderedOutputCount)) outputs rendered"
+            isTerminal
+                ? TerminalStyle(
+                    .bold
+                ).apply(
+                    heading
+                )
+                : heading
+        )
+
+        print()
+
+        let graph =
+            TerminalRelationshipGraph(
+                edges:
+                    sourceActivityEdges,
+                inputTitle:
+                    "Sources",
+                outputTitle:
+                    "Outputs",
+                style:
+                    isTerminal
+                        ? .standard
+                        : .plain
+            )
+
+        print(
+            graph.render(
+                width: width
+            )
         )
     }
 
@@ -349,11 +851,47 @@ func printConAnyRunSummary(
         )
     )
 
-    print(
-        "Done"
-            + " · \(formattedDuration(elapsed))"
-            + " · \(formattedTimestamp(completedAt))"
+    print()
+
+    let timestamp =
+        formattedTimestamp(
+            completedAt
+        )
+
+    let completionLine: String
+
+    if isTerminal {
+        let subdued =
+            TerminalStyle(
+                .brightBlack
+            )
+
+        completionLine =
+            subdued.apply(
+                "Done at "
+            )
+            + timestamp
+            + subdued.apply(
+                " · \(identity.tagged)"
+            )
+    } else {
+        completionLine =
+            "Done at "
+            + timestamp
             + " · \(identity.tagged)"
+    }
+
+    print(
+        completionLine
+    )
+
+    print(
+        "✓ "
+            + styledState
+            + " · \(formattedDuration(elapsed))"
+            + " · \(formattedCount(result.outputCount)) \(outputWord)"
+            + " · \(formattedCount(result.fileCount)) \(fileWord)"
+            + " · \(formattedCount(result.totalLineCount)) lines"
     )
 }
 

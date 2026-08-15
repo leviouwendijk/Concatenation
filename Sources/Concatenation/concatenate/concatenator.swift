@@ -146,6 +146,12 @@ public struct FileConcatenator: SafelyConcatenatable {
         concurrency: IOConcurrency,
         persistCache: Bool
     ) async throws -> ConcatenationPreparedDocument {
+        let startedAt =
+            Date()
+
+        let cacheLoadStartedAt =
+            Date()
+
         let cachedManifest: ConcatenationCacheManifest?
 
         if let workspace,
@@ -159,9 +165,25 @@ public struct FileConcatenator: SafelyConcatenatable {
             cachedManifest = nil
         }
 
+        let cacheLoadDuration =
+            Date().timeIntervalSince(
+                cacheLoadStartedAt
+            )
+
+        let sourceInspectionStartedAt =
+            Date()
+
         let preinspected = try await preinspectSources(
             concurrency: concurrency
         )
+
+        let sourceInspectionDuration =
+            Date().timeIntervalSince(
+                sourceInspectionStartedAt
+            )
+
+        let safeguardStartedAt =
+            Date()
 
         let presafeguards = try await preinspectSafeguards(
             preinspected: preinspected,
@@ -169,12 +191,28 @@ public struct FileConcatenator: SafelyConcatenatable {
             concurrency: concurrency
         )
 
+        let safeguardDuration =
+            Date().timeIntervalSince(
+                safeguardStartedAt
+            )
+
+        let sectionPreloadStartedAt =
+            Date()
+
         let preloadedSections = try await preloadCachedSections(
             preinspected: preinspected,
             presafeguards: presafeguards,
             cachedManifest: cachedManifest,
             concurrency: concurrency
         )
+
+        let sectionPreloadDuration =
+            Date().timeIntervalSince(
+                sectionPreloadStartedAt
+            )
+
+        let sourcePrereadStartedAt =
+            Date()
 
         let prereads = try await preReadSources(
             preinspected: preinspected,
@@ -184,7 +222,15 @@ public struct FileConcatenator: SafelyConcatenatable {
             concurrency: concurrency
         )
 
-        return try prepareDocument(
+        let sourcePrereadDuration =
+            Date().timeIntervalSince(
+                sourcePrereadStartedAt
+            )
+
+        let assemblyStartedAt =
+            Date()
+
+        let prepared = try prepareDocument(
             preinspected: preinspected,
             presafeguards: presafeguards,
             preloadedSections: preloadedSections,
@@ -192,6 +238,40 @@ public struct FileConcatenator: SafelyConcatenatable {
             prereads: prereads,
             cachedManifest: cachedManifest,
             persistCache: persistCache
+        )
+
+        let assemblyDuration =
+            Date().timeIntervalSince(
+                assemblyStartedAt
+            )
+
+        let duration =
+            Date().timeIntervalSince(
+                startedAt
+            )
+
+        return ConcatenationPreparedDocument(
+            document: prepared.document,
+            cacheManifest: prepared.cacheManifest,
+            cacheStateChanged:
+                prepared.cacheStateChanged,
+            sourceActivities:
+                prepared.sourceActivities,
+            preparationStatistics: .init(
+                duration: duration,
+                cacheLoadDuration:
+                    cacheLoadDuration,
+                sourceInspectionDuration:
+                    sourceInspectionDuration,
+                safeguardDuration:
+                    safeguardDuration,
+                sectionPreloadDuration:
+                    sectionPreloadDuration,
+                sourcePrereadDuration:
+                    sourcePrereadDuration,
+                assemblyDuration:
+                    assemblyDuration
+            )
         )
     }
 
@@ -295,6 +375,8 @@ public struct FileConcatenator: SafelyConcatenatable {
         var metadataHits = 0
         var contentHits = 0
         var rebuilds = 0
+        var sourceActivities:
+            [ConcatenationSourceActivity] = []
 
         for (sourceIndex, source) in plan.sources.enumerated() {
             let fileURL = source.file
@@ -535,6 +617,13 @@ public struct FileConcatenator: SafelyConcatenatable {
                        ) {
                         contentHits += 1
 
+                        sourceActivities.append(
+                            .init(
+                                source: fileURL,
+                                kind: .reread
+                            )
+                        )
+
                         section = reusedSection
                         cachedSource = .init(
                             metadata: metadata,
@@ -544,6 +633,13 @@ public struct FileConcatenator: SafelyConcatenatable {
                         )
                     } else {
                         rebuilds += 1
+
+                        sourceActivities.append(
+                            .init(
+                                source: fileURL,
+                                kind: .rebuilt
+                            )
+                        )
 
                         section = makeSection(
                             for: source,
@@ -664,7 +760,10 @@ public struct FileConcatenator: SafelyConcatenatable {
                 sourceMaterialFingerprint: sourceMaterialFingerprint
             ),
             cacheManifest: preparedCacheManifest,
-            cacheStateChanged: cacheStateChanged
+            cacheStateChanged: cacheStateChanged,
+            sourceActivities:
+                sourceActivities,
+            preparationStatistics: .init()
         )
     }
 
@@ -818,6 +917,9 @@ public struct FileConcatenator: SafelyConcatenatable {
             throw ConcatError.outputRequired
         }
 
+        let startedAt =
+            Date()
+
         if verbose {
             if let location {
                 print("Concatenation location: \(location)")
@@ -848,19 +950,52 @@ public struct FileConcatenator: SafelyConcatenatable {
             )
         }
 
+        let artifactFingerprintStartedAt =
+            Date()
+
         let materialFingerprint = try artifactMaterialFingerprint(
             for: preparedDocument
         )
 
-        if !copyToClipboard,
-           let artifact = try validatedCachedArtifact(
-                materialFingerprint: materialFingerprint,
-                manifest: preparation.cacheManifest
-           ) {
+        let artifactFingerprintDuration =
+            Date().timeIntervalSince(
+                artifactFingerprintStartedAt
+            )
+
+        let artifactValidationStartedAt =
+            Date()
+
+        let cachedArtifact: ConcatenationCachedArtifact?
+
+        if copyToClipboard {
+            cachedArtifact = nil
+        } else {
+            cachedArtifact = try validatedCachedArtifact(
+                materialFingerprint:
+                    materialFingerprint,
+                manifest:
+                    preparation.cacheManifest
+            )
+        }
+
+        let artifactValidationDuration =
+            Date().timeIntervalSince(
+                artifactValidationStartedAt
+            )
+
+        if let artifact = cachedArtifact {
+            let cachePersistenceStartedAt =
+                Date()
+
             try persistCachedState(
                 preparation,
                 artifact: artifact
             )
+
+            let cachePersistenceDuration =
+                Date().timeIntervalSince(
+                    cachePersistenceStartedAt
+                )
 
             if verbose {
                 print(
@@ -873,13 +1008,41 @@ public struct FileConcatenator: SafelyConcatenatable {
                 renderResult: nil,
                 writeResult: nil,
                 renderedLineCount:
-                    preparedDocument.statistics.selectedLineCount
+                    preparedDocument.statistics.selectedLineCount,
+                sourceActivities:
+                    preparation.sourceActivities,
+                statistics: .init(
+                    duration:
+                        Date().timeIntervalSince(
+                            startedAt
+                        ),
+                    preparation:
+                        preparation
+                        .preparationStatistics,
+                    artifactFingerprintDuration:
+                        artifactFingerprintDuration,
+                    artifactValidationDuration:
+                        artifactValidationDuration,
+                    cachePersistenceDuration:
+                        cachePersistenceDuration
+                )
             )
         }
+
+        let renderStartedAt =
+            Date()
 
         let rendered = render(
             preparedDocument
         )
+
+        let renderDuration =
+            Date().timeIntervalSince(
+                renderStartedAt
+            )
+
+        let outputWriteStartedAt =
+            Date()
 
         let writeResult = try ConcatenationWriter(
             outputURL
@@ -887,20 +1050,52 @@ public struct FileConcatenator: SafelyConcatenatable {
             rendered.text
         )
 
+        let outputWriteDuration =
+            Date().timeIntervalSince(
+                outputWriteStartedAt
+            )
+
+        let artifactCreationStartedAt =
+            Date()
+
         let artifact = try makeCachedArtifact(
             renderedText: rendered.text,
             materialFingerprint: materialFingerprint
         )
+
+        let artifactCreationDuration =
+            Date().timeIntervalSince(
+                artifactCreationStartedAt
+            )
+
+        let cachePersistenceStartedAt =
+            Date()
 
         try persistCachedState(
             preparation,
             artifact: artifact
         )
 
+        let cachePersistenceDuration =
+            Date().timeIntervalSince(
+                cachePersistenceStartedAt
+            )
+
+        var clipboardDuration:
+            TimeInterval = 0
+
         if copyToClipboard {
+            let clipboardStartedAt =
+                Date()
+
             copy(
                 rendered
             )
+
+            clipboardDuration =
+                Date().timeIntervalSince(
+                    clipboardStartedAt
+                )
         }
 
         if verbose {
@@ -914,7 +1109,32 @@ public struct FileConcatenator: SafelyConcatenatable {
             renderResult: rendered,
             writeResult: writeResult,
             renderedLineCount:
-                preparedDocument.statistics.selectedLineCount
+                preparedDocument.statistics.selectedLineCount,
+            sourceActivities:
+                preparation.sourceActivities,
+            statistics: .init(
+                duration:
+                    Date().timeIntervalSince(
+                        startedAt
+                    ),
+                preparation:
+                    preparation
+                    .preparationStatistics,
+                artifactFingerprintDuration:
+                    artifactFingerprintDuration,
+                artifactValidationDuration:
+                    artifactValidationDuration,
+                renderDuration:
+                    renderDuration,
+                outputWriteDuration:
+                    outputWriteDuration,
+                artifactCreationDuration:
+                    artifactCreationDuration,
+                cachePersistenceDuration:
+                    cachePersistenceDuration,
+                clipboardDuration:
+                    clipboardDuration
+            )
         )
     }
 
@@ -937,6 +1157,10 @@ private struct ConcatenationPreparedDocument:
     let document: ConcatenationDocument
     let cacheManifest: ConcatenationCacheManifest?
     let cacheStateChanged: Bool
+    let sourceActivities:
+        [ConcatenationSourceActivity]
+    let preparationStatistics:
+        ConcatenationPreparationStatistics
 }
 
 private struct ConcatenationPreinspection:
