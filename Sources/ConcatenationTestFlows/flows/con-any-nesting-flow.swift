@@ -274,7 +274,7 @@ extension ConcatenationFlowSuite {
                     "conany.nesting.warm-no-write"
                 )
             }
-            Step("resolved output collisions fail before source resolution") {
+            Step("execution construction rejects resolved output collisions") {
                 let root =
                     FileManager.default
                     .temporaryDirectory
@@ -296,16 +296,6 @@ extension ConcatenationFlowSuite {
                     """
                 )
 
-                let execution = ConAnyExecution(
-                    configURL:
-                        root.appendingPathComponent(
-                            ".conany",
-                            isDirectory: false
-                        ),
-                    configuration:
-                        configuration
-                )
-
                 let expected =
                     root.appendingPathComponent(
                         "nested/same.txt",
@@ -316,7 +306,15 @@ extension ConcatenationFlowSuite {
                 var collision: URL?
 
                 do {
-                    _ = try execution.resolveBatch()
+                    _ = try ConAnyExecution(
+                        configURL:
+                            root.appendingPathComponent(
+                                ".conany",
+                                isDirectory: false
+                            ),
+                        configuration:
+                            configuration
+                    )
                 } catch ConAnyExecutionError.outputCollision(
                     let url
                 ) {

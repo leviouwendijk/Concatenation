@@ -66,40 +66,48 @@ public struct ConAnyExecutionOptions {
 }
 
 public struct ConAnyResolvedOutput {
-    public let renderable: ConAnyRenderableObject
+    public let renderable:
+        ConAnyRenderableObject
+
     public let outputURL: URL
-    public let files: [URL]
-    public let selectedContentByFile: [URL: [ContentSelection]]
-    public let presentedPathByFile: [URL: String]
+
+    public let plan:
+        ConcatenationPlan
 
     public init(
         renderable: ConAnyRenderableObject,
         outputURL: URL,
-        files: [URL],
-        selectedContentByFile: [URL: [ContentSelection]],
-        presentedPathByFile: [URL: String]
+        plan: ConcatenationPlan
     ) {
-        self.renderable = renderable
-        self.outputURL = outputURL.standardizedFileURL
-        self.files = files.map(
-            \.standardizedFileURL
-        )
-        self.selectedContentByFile = selectedContentByFile
-        self.presentedPathByFile = presentedPathByFile
+        self.renderable =
+            renderable
+
+        self.outputURL =
+            outputURL.standardizedFileURL
+
+        self.plan =
+            plan
     }
 
     init(
         renderable: ConAnyRenderableObject,
-        outputURL: URL,
-        standardizedFiles files: [URL],
-        selectedContentByFile: [URL: [ContentSelection]],
-        presentedPathByFile: [URL: String]
+        standardizedOutputURL outputURL: URL,
+        plan: ConcatenationPlan
     ) {
-        self.renderable = renderable
-        self.outputURL = outputURL.standardizedFileURL
-        self.files = files
-        self.selectedContentByFile = selectedContentByFile
-        self.presentedPathByFile = presentedPathByFile
+        self.renderable =
+            renderable
+
+        self.outputURL =
+            outputURL
+
+        self.plan =
+            plan
+    }
+
+    public var sources:
+        [ConcatenationSource]
+    {
+        plan.sources
     }
 
     public var name: String {
@@ -107,11 +115,11 @@ public struct ConAnyResolvedOutput {
     }
 
     public var isEmpty: Bool {
-        files.isEmpty
+        plan.sources.isEmpty
     }
 
     public var fileCount: Int {
-        files.count
+        plan.sources.count
     }
 }
 
@@ -468,6 +476,60 @@ public struct ConAnyWriteBatchResult {
     }
 }
 
+struct ConAnyOutputPlan:
+    Sendable
+{
+    let destinations: [URL]
+
+    init(
+        configuration: ConAnyConfig,
+        resolver: ConAnyResolver
+    ) throws {
+        let count =
+            configuration.renderables.count
+
+        var destinations: [URL] = []
+        var seenPaths: Set<String> = []
+
+        destinations.reserveCapacity(
+            count
+        )
+
+        seenPaths.reserveCapacity(
+            count
+        )
+
+        for renderable in configuration.renderables {
+            let destination =
+                resolver.outputURL(
+                    for: renderable
+                )
+                .standardizedFileURL
+
+            guard seenPaths.insert(
+                destination.path
+            ).inserted else {
+                throw ConAnyExecutionError.outputCollision(
+                    destination
+                )
+            }
+
+            destinations.append(
+                destination
+            )
+        }
+
+        self.destinations =
+            destinations
+    }
+
+    subscript(
+        index: Int
+    ) -> URL {
+        destinations[index]
+    }
+}
+
 public enum ConAnyExecutionError:
     Error,
     LocalizedError
@@ -491,39 +553,70 @@ public struct ConAnyExecution {
     public let configuration: ConAnyConfig
     public let options: ConAnyExecutionOptions
 
+    private let resolver:
+        ConAnyResolver
+
+    private let outputPlan:
+        ConAnyOutputPlan
+
     public init(
         configURL: URL,
         configuration: ConAnyConfig,
         options: ConAnyExecutionOptions = .init()
-    ) {
-        self.configURL = configURL.standardizedFileURL
-        self.configuration = configuration
-        self.options = options
+    ) throws {
+        let standardized =
+            configURL.standardizedFileURL
+
+        let resolver =
+            ConAnyResolver(
+                baseDir:
+                    standardized
+                    .deletingLastPathComponent()
+                    .path
+            )
+
+        let outputPlan =
+            try ConAnyOutputPlan(
+                configuration:
+                    configuration,
+                resolver:
+                    resolver
+            )
+
+        self.configURL =
+            standardized
+
+        self.configuration =
+            configuration
+
+        self.options =
+            options
+
+        self.resolver =
+            resolver
+
+        self.outputPlan =
+            outputPlan
     }
 
     public init(
         configURL: URL,
         options: ConAnyExecutionOptions = .init()
     ) throws {
-        let standardized = configURL.standardizedFileURL
+        let configuration =
+            try ConAnyParser.parseFile(
+                at: configURL
+            )
 
-        self.configURL = standardized
-        self.configuration = try ConAnyParser.parseFile(
-            at: standardized
+        try self.init(
+            configURL: configURL,
+            configuration: configuration,
+            options: options
         )
-        self.options = options
     }
 
     public func resolveBatch() throws -> ConAnyResolvedBatch {
         let startedAt = Date()
-
-        let resolver = ConAnyResolver(
-            baseDir: configDirectory.path
-        )
-
-        let outputURLs = try validatedOutputURLs(
-            using: resolver
-        )
 
         let resolverBatch = try resolver.resolveResults(
             configuration.renderables,
@@ -540,6 +633,43 @@ public struct ConAnyExecution {
 
         let outputAssemblyStartedAt =
             Date()
+
+        let renderOptions =
+            ConcatenationRenderOptions(
+                delimiter:
+                    .init(
+                        style:
+                            options.delimiterStyle,
+                        closure:
+                            options.delimiterClosure
+                    ),
+                line:
+                    .init(
+                        filemax:
+                            options.maxLinesPerFile,
+                        trimblanks:
+                            true,
+                        numbers:
+                            options
+                            .includeSourceLineNumbers
+                    ),
+                output:
+                    .init(
+                        format:
+                            options.outputFormat,
+                        raw:
+                            options.rawOutput,
+                        relativepaths:
+                            false,
+                        modifiedstamp:
+                            options
+                            .includeSourceModifiedAt,
+                        obscurations:
+                            options
+                            .ignoreMap
+                            .obscureValues
+                    )
+            )
 
         var outputs: [ConAnyResolvedOutput] = []
 
@@ -562,52 +692,49 @@ public struct ConAnyExecution {
                     for: renderable
                 )
 
-            var files: [URL] = []
-            var selectedContentByFile:
-                [URL: [ContentSelection]] = [:]
-            var presentedPathByFile:
-                [URL: String] = [:]
+            var sources:
+                [ConcatenationSource] = []
 
-            files.reserveCapacity(
-                matches.count
-            )
-
-            selectedContentByFile.reserveCapacity(
-                matches.count
-            )
-
-            presentedPathByFile.reserveCapacity(
+            sources.reserveCapacity(
                 matches.count
             )
 
             for match in matches {
-                let url =
-                    match.url
-
-                files.append(
-                    url
-                )
-
-                selectedContentByFile[url] =
-                    match.contentSelections
-
-                presentedPathByFile[url] =
-                    resolver.presentedPath(
-                        for: match,
-                        using: presentationPlan
+                sources.append(
+                    ConcatenationSource(
+                        standardizedFile:
+                            match.url,
+                        presentedPath:
+                            resolver.presentedPath(
+                                for:
+                                    match,
+                                using:
+                                    presentationPlan
+                            ),
+                        selections:
+                            match.contentSelections
                     )
+                )
             }
+
+            let plan =
+                ConcatenationPlan(
+                    context:
+                        renderable.context,
+                    sources:
+                        sources,
+                    options:
+                        renderOptions
+                )
 
             outputs.append(
                 ConAnyResolvedOutput(
-                    renderable: renderable,
-                    outputURL:
-                        outputURLs[index],
-                    standardizedFiles: files,
-                    selectedContentByFile:
-                        selectedContentByFile,
-                    presentedPathByFile:
-                        presentedPathByFile
+                    renderable:
+                        renderable,
+                    standardizedOutputURL:
+                        outputPlan[index],
+                    plan:
+                        plan
                 )
             )
         }
@@ -845,46 +972,6 @@ public struct ConAnyExecution {
 }
 
 private extension ConAnyExecution {
-    func validatedOutputURLs(
-        using resolver: ConAnyResolver
-    ) throws -> [URL] {
-        let count =
-            configuration.renderables.count
-
-        var outputURLs: [URL] = []
-        var seenPaths: Set<String> = []
-
-        outputURLs.reserveCapacity(
-            count
-        )
-
-        seenPaths.reserveCapacity(
-            count
-        )
-
-        for renderable in configuration.renderables {
-            let outputURL =
-                resolver.outputURL(
-                    for: renderable
-                )
-                .standardizedFileURL
-
-            guard seenPaths.insert(
-                outputURL.path
-            ).inserted else {
-                throw ConAnyExecutionError.outputCollision(
-                    outputURL
-                )
-            }
-
-            outputURLs.append(
-                outputURL
-            )
-        }
-
-        return outputURLs
-    }
-
     var configDirectory: URL {
         configURL
             .deletingLastPathComponent()
@@ -897,35 +984,31 @@ private extension ConAnyExecution {
         workspace: ConcatenationWorkspace?
     ) -> FileConcatenator {
         FileConcatenator(
-            inputFiles: resolved.files,
-            outputURL: outputURL,
-            context: resolved.renderable.context,
-            workspace: workspace,
-            selectedContentByFile: resolved.selectedContentByFile,
-            presentedPathByFile: resolved.presentedPathByFile,
+            plan:
+                resolved.plan,
+            outputURL:
+                outputURL,
+            workspace:
+                workspace,
 
-            delimiterStyle: options.delimiterStyle,
-            delimiterClosure: options.delimiterClosure,
-            maxLinesPerFile: options.maxLinesPerFile,
-            trimBlankLines: true,
-            relativePaths: false,
-            rawOutput: options.rawOutput,
-            outputFormat: options.outputFormat,
-            includeSourceLineNumbers: options.includeSourceLineNumbers,
-            includeSourceModifiedAt: options.includeSourceModifiedAt,
-            obscureMap: options.ignoreMap.obscureValues,
+            verbose:
+                options.verboseOutput,
+            reportWarnings:
+                false,
 
-            verbose: options.verboseOutput,
-            reportWarnings: false,
+            location:
+                outputURL.map {
+                    "con any block '\(resolved.name)' → \($0.path)"
+                },
 
-            location: outputURL.map {
-                "con any block '\(resolved.name)' → \($0.path)"
-            },
-
-            protectSecrets: options.protectSecrets,
-            allowSecrets: options.allowSecrets,
-            failOnBlockedFiles: options.failOnBlockedFiles,
-            deepSecretInspection: options.deepSecretInspection
+            protectSecrets:
+                options.protectSecrets,
+            allowSecrets:
+                options.allowSecrets,
+            failOnBlockedFiles:
+                options.failOnBlockedFiles,
+            deepSecretInspection:
+                options.deepSecretInspection
         )
     }
 

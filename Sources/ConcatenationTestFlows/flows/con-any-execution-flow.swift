@@ -233,21 +233,24 @@ extension ConcatenationFlowSuite {
                     "conany.execution.resolved-a-file-count"
                 )
 
+                let resolvedSourceA =
+                    try Expect.notNil(
+                        resolvedA.sources.first {
+                            $0.file
+                                == sourceA
+                                .standardizedFileURL
+                        },
+                        "conany.execution.resolved-a-source"
+                    )
+
                 try Expect.equal(
-                    resolvedA.presentedPathByFile[
-                        sourceA.standardizedFileURL
-                    ] ?? "",
+                    resolvedSourceA.presentedPath ?? "",
                     "./input/a.txt",
                     "conany.execution.presented-a"
                 )
 
-                let selectedA =
-                    resolvedA.selectedContentByFile[
-                        sourceA.standardizedFileURL
-                    ] ?? []
-
                 try Expect.equal(
-                    selectedA.count,
+                    resolvedSourceA.selections.count,
                     1,
                     "conany.execution.resolved-a-selection-count"
                 )

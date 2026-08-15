@@ -11,7 +11,22 @@ public struct ConcatenationSource: Sendable {
         presentedPath: String? = nil,
         selections: [ContentSelection] = []
     ) {
-        self.file = file.standardizedFileURL
+        self.init(
+            standardizedFile:
+                file.standardizedFileURL,
+            presentedPath:
+                presentedPath,
+            selections:
+                selections
+        )
+    }
+
+    init(
+        standardizedFile file: URL,
+        presentedPath: String? = nil,
+        selections: [ContentSelection] = []
+    ) {
+        self.file = file
         self.presentedPath = presentedPath
         self.selections = selections
     }

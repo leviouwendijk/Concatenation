@@ -11,25 +11,10 @@ import Readers
 import Selection
 
 public struct FileConcatenator: SafelyConcatenatable {
-    public let inputFiles: [URL]
+    public let plan: ConcatenationPlan
     public let outputURL: URL?
-    public let context: ConcatenationContext?
     public let workspace: ConcatenationWorkspace?
 
-    public let selectedContentByFile: [URL: [ContentSelection]]
-    public let presentedPathByFile: [URL: String]
-
-    public let delimiterStyle: DelimiterStyle
-    public let delimiterClosure: Bool
-    public let maxLinesPerFile: Int?
-    public let trimBlankLines: Bool
-    public let relativePaths: Bool
-    public let rawOutput: Bool
-    public let outputFormat: ConcatenationOutputFormat
-    public let includeSourceLineNumbers: Bool
-    public let includeSourceModifiedAt: Bool
-
-    public let obscureMap: [String: String]
     public let copyToClipboard: Bool
     public let verbose: Bool
     public let reportWarnings: Bool
@@ -40,6 +25,151 @@ public struct FileConcatenator: SafelyConcatenatable {
     public let allowSecrets: Bool
     public let failOnBlockedFiles: Bool
     public let deepSecretInspection: Bool
+
+    public var inputFiles: [URL] {
+        plan.sources.map(
+            \.file
+        )
+    }
+
+    public var context: ConcatenationContext? {
+        plan.context
+    }
+
+    public var selectedContentByFile:
+        [URL: [ContentSelection]]
+    {
+        var selections:
+            [URL: [ContentSelection]] = [:]
+
+        selections.reserveCapacity(
+            plan.sources.count
+        )
+
+        for source in plan.sources {
+            selections[source.file] =
+                source.selections
+        }
+
+        return selections
+    }
+
+    public var presentedPathByFile:
+        [URL: String]
+    {
+        var paths:
+            [URL: String] = [:]
+
+        paths.reserveCapacity(
+            plan.sources.count
+        )
+
+        for source in plan.sources {
+            if let presentedPath =
+                source.presentedPath
+            {
+                paths[source.file] =
+                    presentedPath
+            }
+        }
+
+        return paths
+    }
+
+    public var delimiterStyle: DelimiterStyle {
+        plan.options.delimiter.style
+    }
+
+    public var delimiterClosure: Bool {
+        plan.options.delimiter.closure
+    }
+
+    public var maxLinesPerFile: Int? {
+        plan.options.line.filemax
+    }
+
+    public var trimBlankLines: Bool {
+        plan.options.line.trimblanks
+    }
+
+    public var relativePaths: Bool {
+        plan.options.output.relativepaths
+    }
+
+    public var rawOutput: Bool {
+        plan.options.output.raw
+    }
+
+    public var outputFormat:
+        ConcatenationOutputFormat
+    {
+        plan.options.output.format
+    }
+
+    public var includeSourceLineNumbers: Bool {
+        plan.options.line.numbers
+    }
+
+    public var includeSourceModifiedAt: Bool {
+        plan.options.output.modifiedstamp
+    }
+
+    public var obscureMap:
+        [String: String]
+    {
+        plan.options.output.obscurations
+    }
+
+    public init(
+        plan: ConcatenationPlan,
+        outputURL: URL? = nil,
+        workspace: ConcatenationWorkspace? = nil,
+
+        copyToClipboard: Bool = false,
+        verbose: Bool = false,
+        reportWarnings: Bool = true,
+
+        location: String? = nil,
+
+        protectSecrets: Bool = true,
+        allowSecrets: Bool = false,
+        failOnBlockedFiles: Bool = false,
+        deepSecretInspection: Bool = false
+    ) {
+        self.plan =
+            plan
+
+        self.outputURL =
+            outputURL?
+            .standardizedFileURL
+
+        self.workspace =
+            workspace
+
+        self.copyToClipboard =
+            copyToClipboard
+
+        self.verbose =
+            verbose
+
+        self.reportWarnings =
+            reportWarnings
+
+        self.location =
+            location
+
+        self.protectSecrets =
+            protectSecrets
+
+        self.allowSecrets =
+            allowSecrets
+
+        self.failOnBlockedFiles =
+            failOnBlockedFiles
+
+        self.deepSecretInspection =
+            deepSecretInspection
+    }
 
     public init(
         inputFiles: [URL],
@@ -71,58 +201,125 @@ public struct FileConcatenator: SafelyConcatenatable {
         failOnBlockedFiles: Bool = false,
         deepSecretInspection: Bool = false
     ) {
-        self.inputFiles = inputFiles
-        self.outputURL = outputURL
-        self.context = context
-        self.workspace = workspace
-        self.selectedContentByFile = selectedContentByFile
-        self.presentedPathByFile = Dictionary(
-            uniqueKeysWithValues: presentedPathByFile.map {
-                (
-                    $0.key.standardizedFileURL,
-                    $0.value
-                )
-            }
+        var standardizedSelections:
+            [URL: [ContentSelection]] = [:]
+
+        standardizedSelections.reserveCapacity(
+            selectedContentByFile.count
         )
 
-        self.delimiterStyle = delimiterStyle
-        self.delimiterClosure = delimiterClosure
-        self.maxLinesPerFile = maxLinesPerFile
-        self.trimBlankLines = trimBlankLines
-        self.relativePaths = relativePaths
-        self.rawOutput = rawOutput
-        self.outputFormat = outputFormat
-        self.includeSourceLineNumbers = includeSourceLineNumbers
-        self.includeSourceModifiedAt = includeSourceModifiedAt
-        self.obscureMap = obscureMap
+        for (
+            file,
+            selections
+        ) in selectedContentByFile {
+            standardizedSelections[
+                file.standardizedFileURL
+            ] = selections
+        }
 
-        self.copyToClipboard = copyToClipboard
-        self.verbose = verbose
-        self.reportWarnings = reportWarnings
+        var standardizedPresentedPaths:
+            [URL: String] = [:]
 
-        self.location = location
+        standardizedPresentedPaths.reserveCapacity(
+            presentedPathByFile.count
+        )
 
-        self.protectSecrets = protectSecrets
-        self.allowSecrets = allowSecrets
-        self.failOnBlockedFiles = failOnBlockedFiles
-        self.deepSecretInspection = deepSecretInspection
-    }
+        for (
+            file,
+            presentedPath
+        ) in presentedPathByFile {
+            standardizedPresentedPaths[
+                file.standardizedFileURL
+            ] = presentedPath
+        }
 
-    public var plan: ConcatenationPlan {
-        ConcatenationPlan(
-            context: context,
-            sources: inputFiles.map { file in
-                let standardized = file.standardizedFileURL
+        var sources:
+            [ConcatenationSource] = []
 
-                return ConcatenationSource(
-                    file: standardized,
-                    presentedPath: presentedPathByFile[standardized],
-                    selections: selections(
-                        for: standardized
-                    )
+        sources.reserveCapacity(
+            inputFiles.count
+        )
+
+        for file in inputFiles {
+            let standardized =
+                file.standardizedFileURL
+
+            sources.append(
+                ConcatenationSource(
+                    standardizedFile:
+                        standardized,
+                    presentedPath:
+                        standardizedPresentedPaths[
+                            standardized
+                        ],
+                    selections:
+                        standardizedSelections[
+                            standardized
+                        ] ?? []
                 )
-            },
-            options: options
+            )
+        }
+
+        self.init(
+            plan:
+                ConcatenationPlan(
+                    context:
+                        context,
+                    sources:
+                        sources,
+                    options:
+                        .init(
+                            delimiter:
+                                .init(
+                                    style:
+                                        delimiterStyle,
+                                    closure:
+                                        delimiterClosure
+                                ),
+                            line:
+                                .init(
+                                    filemax:
+                                        maxLinesPerFile,
+                                    trimblanks:
+                                        trimBlankLines,
+                                    numbers:
+                                        includeSourceLineNumbers
+                                ),
+                            output:
+                                .init(
+                                    format:
+                                        outputFormat,
+                                    raw:
+                                        rawOutput,
+                                    relativepaths:
+                                        relativePaths,
+                                    modifiedstamp:
+                                        includeSourceModifiedAt,
+                                    obscurations:
+                                        obscureMap
+                                )
+                        )
+                ),
+            outputURL:
+                outputURL,
+            workspace:
+                workspace,
+            copyToClipboard:
+                copyToClipboard,
+            verbose:
+                verbose,
+            reportWarnings:
+                reportWarnings,
+            location:
+                location,
+            protectSecrets:
+                protectSecrets,
+            allowSecrets:
+                allowSecrets,
+            failOnBlockedFiles:
+                failOnBlockedFiles,
+            deepSecretInspection:
+                deepSecretInspection
         )
     }
 
@@ -619,8 +816,12 @@ public struct FileConcatenator: SafelyConcatenatable {
 
                         sourceActivities.append(
                             .init(
-                                source: fileURL,
-                                kind: .reread
+                                standardizedSource:
+                                    fileURL,
+                                presentedPath:
+                                    source.presentedPath,
+                                kind:
+                                    .reread
                             )
                         )
 
@@ -636,8 +837,12 @@ public struct FileConcatenator: SafelyConcatenatable {
 
                         sourceActivities.append(
                             .init(
-                                source: fileURL,
-                                kind: .rebuilt
+                                standardizedSource:
+                                    fileURL,
+                                presentedPath:
+                                    source.presentedPath,
+                                kind:
+                                    .rebuilt
                             )
                         )
 
@@ -731,7 +936,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         }
 
         let statistics = ConcatenationStatistics(
-            sourceCount: inputFiles.count,
+            sourceCount: plan.sources.count,
             renderedSectionCount: sections.count,
             blockedFileCount: blockedFileCount,
             truncatedSectionCount: sections.filter(\.wasTruncated).count,
@@ -753,7 +958,7 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         return ConcatenationPreparedDocument(
             document: ConcatenationDocument(
-                context: context,
+                context: plan.context,
                 sections: sections,
                 warnings: warnings,
                 statistics: statistics,
@@ -833,7 +1038,7 @@ public struct FileConcatenator: SafelyConcatenatable {
             }
 
             print(
-                "Concatenating \(inputFiles.count) files → \(outputURL.path)"
+                "Concatenating \(plan.sources.count) files → \(outputURL.path)"
             )
         }
 
@@ -926,7 +1131,7 @@ public struct FileConcatenator: SafelyConcatenatable {
             }
 
             print(
-                "Concatenating \(inputFiles.count) files → \(outputURL.path)"
+                "Concatenating \(plan.sources.count) files → \(outputURL.path)"
             )
         }
 
@@ -1303,24 +1508,7 @@ private enum ConcatenationCacheInvariantError:
 
 private extension FileConcatenator {
     var options: ConcatenationRenderOptions {
-        .init(
-            delimiter: .init(
-                style: delimiterStyle,
-                closure: delimiterClosure
-            ),
-            line: .init(
-                filemax: maxLinesPerFile,
-                trimblanks: trimBlankLines,
-                numbers: includeSourceLineNumbers
-            ),
-            output: .init(
-                format: outputFormat,
-                raw: rawOutput,
-                relativepaths: relativePaths,
-                modifiedstamp: includeSourceModifiedAt,
-                obscurations: obscureMap
-            )
-        )
+        plan.options
     }
 
     func render(
@@ -1420,6 +1608,7 @@ private extension FileConcatenator {
 
         let slices = resolvedSlices(
             for: resolved,
+            selections: source.selections,
             lines: obscuredLines,
             encodingUsed: readResult.encodingUsed,
             byteCount: readResult.byteCount,
@@ -1449,15 +1638,12 @@ private extension FileConcatenator {
 
     func resolvedSlices(
         for file: URL,
+        selections: [ContentSelection],
         lines: [String],
         encodingUsed: TextEncoding?,
         byteCount: Int,
         existed: Bool
     ) -> [FileLineSlice] {
-        let fileSelections = selections(
-            for: file.standardizedFileURL
-        )
-
         let readResult = LineReadResult(
             url: file,
             lines: lines,
@@ -1469,24 +1655,8 @@ private extension FileConcatenator {
         return SelectionResolver.resolve(
             file: file,
             readResult: readResult,
-            selections: fileSelections
+            selections: selections
         ).slices
-    }
-
-    func selections(
-        for file: URL
-    ) -> [ContentSelection] {
-        let standardized = file.standardizedFileURL
-
-        if let exact = selectedContentByFile[standardized] {
-            return exact
-        }
-
-        if let exact = selectedContentByFile[file] {
-            return exact
-        }
-
-        return []
     }
 
     func printWarnings(
@@ -2462,9 +2632,8 @@ private extension FileConcatenator {
                 resolved: resolved,
                 fileManager: fileManager
             ),
-            selections: selections(
-                for: resolved
-            ),
+            selections:
+                source.selections,
             trimBlankLines: options.line.trimblanks,
             maxLinesPerFile: options.line.filemax,
             obscurations: options.output.obscurations,

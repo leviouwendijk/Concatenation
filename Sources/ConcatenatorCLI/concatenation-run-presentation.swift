@@ -711,16 +711,14 @@ func printConAnyRunSummary(
 
             var activityBySource: [
                 URL:
-                    ConcatenationSourceActivity.Kind
+                    ConcatenationSourceActivity
             ] = [:]
 
             for activity
                 in output.result.sourceActivities
             {
                 let source =
-                    activity
-                    .source
-                    .standardizedFileURL
+                    activity.source
 
                 if activityBySource[source] == nil {
                     orderedSources.append(
@@ -732,7 +730,7 @@ func printConAnyRunSummary(
                     || activityBySource[source] == nil
                 {
                     activityBySource[source] =
-                        activity.kind
+                        activity
                 }
             }
 
@@ -746,14 +744,12 @@ func printConAnyRunSummary(
                 }
 
                 let presentedSource =
-                    output
-                    .resolved
-                    .presentedPathByFile[source]
+                    activity.presentedPath
                     ?? source.path
 
                 let activityLabel: String
 
-                switch activity {
+                switch activity.kind {
                 case .reread:
                     activityLabel =
                         "reread"

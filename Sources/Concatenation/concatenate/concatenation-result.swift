@@ -206,15 +206,37 @@ public struct ConcatenationSourceActivity:
     }
 
     public let source: URL
+    public let presentedPath: String?
     public let kind: Kind
 
     public init(
         source: URL,
+        presentedPath: String? = nil,
         kind: Kind
     ) {
         self.source =
             source.standardizedFileURL
-        self.kind = kind
+
+        self.presentedPath =
+            presentedPath
+
+        self.kind =
+            kind
+    }
+
+    init(
+        standardizedSource source: URL,
+        presentedPath: String? = nil,
+        kind: Kind
+    ) {
+        self.source =
+            source
+
+        self.presentedPath =
+            presentedPath
+
+        self.kind =
+            kind
     }
 }
 
