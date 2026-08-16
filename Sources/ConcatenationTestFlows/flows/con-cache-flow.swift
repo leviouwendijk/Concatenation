@@ -66,6 +66,239 @@ extension ConcatenationFlowSuite {
                 )
             }
 
+            Step("memory cache reuses outputless source state") {
+                let fixture = try ConcatenationCacheFixture(
+                    "memory-outputless"
+                )
+
+                defer {
+                    fixture.remove()
+                }
+
+                try fixture.writeSource(
+                    """
+                    alpha
+                    beta
+                    gamma
+                    """
+                )
+
+                let scope =
+                    fixture.root
+                    .appendingPathComponent(
+                        "agentic-context",
+                        isDirectory: false
+                    )
+
+                let session =
+                    ConcatenationSession()
+
+                let binding =
+                    session.binding(
+                        for: scope
+                    )
+
+                let concatenator =
+                    FileConcatenator(
+                        inputFiles: [
+                            fixture.source,
+                        ],
+                        cache:
+                            binding,
+                        protectSecrets:
+                            false
+                    )
+
+                let first =
+                    try concatenator.document()
+
+                try Expect.equal(
+                    first.statistics.cache.sourceReads,
+                    1,
+                    "cache.memory-first-source-read"
+                )
+
+                try Expect.equal(
+                    first.statistics.cache.rebuilds,
+                    1,
+                    "cache.memory-first-rebuild"
+                )
+
+                let second =
+                    try concatenator.document()
+
+                try Expect.equal(
+                    second.statistics.cache.sourceReads,
+                    0,
+                    "cache.memory-warm-zero-source-reads"
+                )
+
+                try Expect.equal(
+                    second.statistics.cache.metadataHits,
+                    1,
+                    "cache.memory-warm-metadata-hit"
+                )
+
+                let manifest =
+                    try Expect.notNil(
+                        try binding.load(),
+                        "cache.memory-manifest"
+                    )
+
+                _ = try Expect.notNil(
+                    try binding.loadSection(
+                        key:
+                            manifest
+                            .sources[0]
+                            .sectionKey
+                    ),
+                    "cache.memory-section"
+                )
+
+                try fixture.writeSource(
+                    """
+                    alpha
+                    beta
+                    changed
+                    """
+                )
+
+                try session.invalidate(
+                    source:
+                        fixture.source
+                )
+
+                let invalidated =
+                    try Expect.notNil(
+                        try binding.load(),
+                        "cache.memory-invalidated-manifest"
+                    )
+
+                try Expect.equal(
+                    invalidated.sources.count,
+                    0,
+                    "cache.memory-invalidated-source-removed"
+                )
+
+                let refreshed =
+                    try concatenator.document()
+
+                try Expect.equal(
+                    refreshed.statistics.cache.sourceReads,
+                    1,
+                    "cache.memory-invalidated-source-read"
+                )
+
+                try Expect.equal(
+                    refreshed.statistics.cache.rebuilds,
+                    1,
+                    "cache.memory-invalidated-rebuild"
+                )
+
+                let stable =
+                    try concatenator.document()
+
+                try Expect.equal(
+                    stable.statistics.cache.sourceReads,
+                    0,
+                    "cache.memory-restabilized-zero-source-reads"
+                )
+
+                try Expect.equal(
+                    stable.statistics.cache.metadataHits,
+                    1,
+                    "cache.memory-restabilized-hit"
+                )
+            }
+
+            Step("hybrid cache promotes disk state into memory") {
+                let fixture = try ConcatenationCacheFixture(
+                    "hybrid-promotion"
+                )
+
+                defer {
+                    fixture.remove()
+                }
+
+                try fixture.writeSource(
+                    """
+                    alpha
+                    beta
+                    gamma
+                    """
+                )
+
+                _ = try fixture
+                    .concatenator()
+                    .document()
+
+                let memory =
+                    ConcatenationMemoryCache()
+
+                let hybrid =
+                    ConcatenationHybridCache(
+                        memory:
+                            memory,
+                        disk:
+                            fixture.store
+                    )
+
+                let binding =
+                    ConcatenationCacheBinding(
+                        storage:
+                            hybrid,
+                        scope:
+                            fixture.output
+                    )
+
+                let outputless =
+                    FileConcatenator(
+                        inputFiles: [
+                            fixture.source,
+                        ],
+                        cache:
+                            binding,
+                        protectSecrets:
+                            false
+                    )
+
+                let warm =
+                    try outputless.document()
+
+                try Expect.equal(
+                    warm.statistics.cache.sourceReads,
+                    0,
+                    "cache.hybrid-warm-zero-source-reads"
+                )
+
+                try Expect.equal(
+                    warm.statistics.cache.metadataHits,
+                    1,
+                    "cache.hybrid-warm-metadata-hit"
+                )
+
+                let promoted =
+                    try Expect.notNil(
+                        try memory.load(
+                            for:
+                                fixture.output
+                        ),
+                        "cache.hybrid-promoted-manifest"
+                    )
+
+                _ = try Expect.notNil(
+                    try memory.loadSection(
+                        for:
+                            fixture.output,
+                        key:
+                            promoted
+                            .sources[0]
+                            .sectionKey
+                    ),
+                    "cache.hybrid-promoted-section"
+                )
+            }
+
             Step("workspace maps internal and external cache manifests") {
                 let fixture = try ConcatenationCacheFixture(
                     "workspace"

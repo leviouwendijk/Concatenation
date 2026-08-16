@@ -795,42 +795,19 @@ public struct ConAnyExecution {
     public func render(
         concurrency: IOConcurrency = .automatic
     ) async throws -> ConAnyRenderBatchResult {
-        let resolvedBatch = try resolveBatch()
-        let resolved = resolvedBatch.outputs
+        try await renderResolved(
+            session: nil,
+            concurrency: concurrency
+        )
+    }
 
-        var outputs: [ConAnyRenderedOutput] = []
-        var skipped: [ConAnyResolvedOutput] = []
-
-        for output in resolved {
-            guard !output.isEmpty else {
-                skipped.append(
-                    output
-                )
-                continue
-            }
-
-            let concatenator = makeConcatenator(
-                for: output,
-                outputURL: nil,
-                workspace: nil
-            )
-
-            let result = try await concatenator.render(
-                concurrency: concurrency
-            )
-
-            outputs.append(
-                .init(
-                    resolved: output,
-                    result: result
-                )
-            )
-        }
-
-        return .init(
-            outputs: outputs,
-            skipped: skipped,
-            resolution: resolvedBatch.statistics
+    public func render(
+        using session: ConcatenationSession,
+        concurrency: IOConcurrency = .automatic
+    ) async throws -> ConAnyRenderBatchResult {
+        try await renderResolved(
+            session: session,
+            concurrency: concurrency
         )
     }
 
@@ -978,10 +955,64 @@ private extension ConAnyExecution {
             .standardizedFileURL
     }
 
+    func renderResolved(
+        session: ConcatenationSession?,
+        concurrency: IOConcurrency
+    ) async throws -> ConAnyRenderBatchResult {
+        let resolvedBatch = try resolveBatch()
+
+        var outputs: [ConAnyRenderedOutput] = []
+        var skipped: [ConAnyResolvedOutput] = []
+
+        outputs.reserveCapacity(
+            resolvedBatch.outputs.count
+        )
+
+        skipped.reserveCapacity(
+            resolvedBatch.outputs.count
+        )
+
+        for output in resolvedBatch.outputs {
+            guard !output.isEmpty else {
+                skipped.append(
+                    output
+                )
+                continue
+            }
+
+            let concatenator = makeConcatenator(
+                for: output,
+                outputURL: nil,
+                workspace: nil,
+                cache: session?.binding(
+                    for: output.outputURL
+                )
+            )
+
+            let result = try await concatenator.render(
+                concurrency: concurrency
+            )
+
+            outputs.append(
+                .init(
+                    resolved: output,
+                    result: result
+                )
+            )
+        }
+
+        return .init(
+            outputs: outputs,
+            skipped: skipped,
+            resolution: resolvedBatch.statistics
+        )
+    }
+
     func makeConcatenator(
         for resolved: ConAnyResolvedOutput,
         outputURL: URL?,
-        workspace: ConcatenationWorkspace?
+        workspace: ConcatenationWorkspace?,
+        cache: ConcatenationCacheBinding? = nil
     ) -> FileConcatenator {
         FileConcatenator(
             plan:
@@ -990,6 +1021,8 @@ private extension ConAnyExecution {
                 outputURL,
             workspace:
                 workspace,
+            cache:
+                cache,
 
             verbose:
                 options.verboseOutput,

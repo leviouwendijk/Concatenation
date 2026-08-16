@@ -4,6 +4,7 @@ import Readers
 import Writers
 
 public struct ConcatenationCacheStore:
+    ConcatenationCache,
     Sendable
 {
     public let workspace: ConcatenationWorkspace

@@ -14,6 +14,7 @@ public struct FileConcatenator: SafelyConcatenatable {
     public let plan: ConcatenationPlan
     public let outputURL: URL?
     public let workspace: ConcatenationWorkspace?
+    public let cache: ConcatenationCacheBinding?
 
     public let copyToClipboard: Bool
     public let verbose: Bool
@@ -124,6 +125,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         plan: ConcatenationPlan,
         outputURL: URL? = nil,
         workspace: ConcatenationWorkspace? = nil,
+        cache: ConcatenationCacheBinding? = nil,
 
         copyToClipboard: Bool = false,
         verbose: Bool = false,
@@ -136,15 +138,38 @@ public struct FileConcatenator: SafelyConcatenatable {
         failOnBlockedFiles: Bool = false,
         deepSecretInspection: Bool = false
     ) {
+        let standardizedOutputURL =
+            outputURL?
+            .standardizedFileURL
+
         self.plan =
             plan
 
         self.outputURL =
-            outputURL?
-            .standardizedFileURL
+            standardizedOutputURL
 
         self.workspace =
             workspace
+
+        if let cache {
+            self.cache =
+                cache
+        } else if let workspace,
+                  let standardizedOutputURL {
+            self.cache =
+                ConcatenationCacheBinding(
+                    storage:
+                        ConcatenationCacheStore(
+                            workspace:
+                                workspace
+                        ),
+                    scope:
+                        standardizedOutputURL
+                )
+        } else {
+            self.cache =
+                nil
+        }
 
         self.copyToClipboard =
             copyToClipboard
@@ -176,6 +201,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         outputURL: URL? = nil,
         context: ConcatenationContext? = nil,
         workspace: ConcatenationWorkspace? = nil,
+        cache: ConcatenationCacheBinding? = nil,
         selectedContentByFile: [URL: [ContentSelection]] = [:],
         presentedPathByFile: [URL: String] = [:],
 
@@ -304,6 +330,8 @@ public struct FileConcatenator: SafelyConcatenatable {
                 outputURL,
             workspace:
                 workspace,
+            cache:
+                cache,
             copyToClipboard:
                 copyToClipboard,
             verbose:
@@ -349,18 +377,8 @@ public struct FileConcatenator: SafelyConcatenatable {
         let cacheLoadStartedAt =
             Date()
 
-        let cachedManifest: ConcatenationCacheManifest?
-
-        if let workspace,
-           let outputURL {
-            cachedManifest = try ConcatenationCacheStore(
-                workspace: workspace
-            ).load(
-                for: outputURL
-            )
-        } else {
-            cachedManifest = nil
-        }
+        let cachedManifest =
+            try cache?.load()
 
         let cacheLoadDuration =
             Date().timeIntervalSince(
@@ -496,28 +514,17 @@ public struct FileConcatenator: SafelyConcatenatable {
         var preloadedSections = initialPreloadedSections
         var prereads = initialPrereads
 
-        let cacheStore: ConcatenationCacheStore?
-
-        if let workspace,
-           outputURL != nil {
-            cacheStore = ConcatenationCacheStore(
-                workspace: workspace
-            )
-        } else {
-            cacheStore = nil
-        }
+        let cache =
+            self.cache
 
         let cachedManifest: ConcatenationCacheManifest?
 
         if let providedCachedManifest {
-            cachedManifest = providedCachedManifest
-        } else if let cacheStore,
-                  let outputURL {
-            cachedManifest = try cacheStore.load(
-                for: outputURL
-            )
+            cachedManifest =
+                providedCachedManifest
         } else {
-            cachedManifest = nil
+            cachedManifest =
+                try cache?.load()
         }
 
         var cachedSourcesByFile: [
@@ -765,7 +772,7 @@ public struct FileConcatenator: SafelyConcatenatable {
                     } else {
                         exactCachedSection = try loadCachedSection(
                             previous,
-                            from: cacheStore
+                            from: cache
                         )
                     }
                 } else {
@@ -810,7 +817,7 @@ public struct FileConcatenator: SafelyConcatenatable {
                        previous.transformationFingerprint == transformationFingerprint,
                        let reusedSection = try loadCachedSection(
                             previous,
-                            from: cacheStore
+                            from: cache
                        ) {
                         contentHits += 1
 
@@ -864,7 +871,7 @@ public struct FileConcatenator: SafelyConcatenatable {
                         try saveCachedSection(
                             section,
                             source: cachedSource,
-                            to: cacheStore
+                            to: cache
                         )
                     }
                 }
@@ -908,26 +915,31 @@ public struct FileConcatenator: SafelyConcatenatable {
             safeguards: cachedSafeguards
         )
 
-        let preparedCacheManifest: ConcatenationCacheManifest?
-
-        if cacheStore != nil,
-           let outputURL {
-            preparedCacheManifest = ConcatenationCacheManifest(
-                output: outputURL,
-                sources: cachedSources,
-                safeguards: cachedSafeguards,
-                artifact: cachedManifest?.artifact
-            )
-        } else {
-            preparedCacheManifest = nil
-        }
+        let preparedCacheManifest =
+            cache.map {
+                ConcatenationCacheManifest(
+                    output:
+                        $0.scope,
+                    sources:
+                        cachedSources,
+                    safeguards:
+                        cachedSafeguards,
+                    artifact:
+                        cachedManifest?.artifact
+                )
+            }
 
         if persistCache,
            cacheStateChanged,
-           let cacheStore,
+           let cache,
            let preparedCacheManifest {
-            try cacheStore.save(
-                preparedCacheManifest
+            try cache.save(
+                sources:
+                    preparedCacheManifest.sources,
+                safeguards:
+                    preparedCacheManifest.safeguards,
+                artifact:
+                    preparedCacheManifest.artifact
             )
         }
 
@@ -1841,16 +1853,12 @@ private extension FileConcatenator {
     ) async throws -> [
         Int: ConcatenationSection
     ] {
-        guard let workspace,
-              let outputURL,
+        guard let cache,
               let cachedManifest else {
             return [:]
         }
 
         let fileManager = FileManager.default
-        let cacheStore = ConcatenationCacheStore(
-            workspace: workspace
-        )
 
         var remainingMetadata = preinspected
         var cachedSourcesByFile: [
@@ -1959,9 +1967,9 @@ private extension FileConcatenator {
         ) { job in
             ConcatenationSectionPreload(
                 sourceIndex: job.sourceIndex,
-                section: try? cacheStore.loadSection(
-                    for: outputURL,
-                    key: job.source.sectionKey
+                section: try? cache.loadSection(
+                    key:
+                        job.source.sectionKey
                 )
             )
         }
@@ -2268,33 +2276,23 @@ private extension FileConcatenator {
 
     func loadCachedSection(
         _ source: ConcatenationCachedSource,
-        from cacheStore: ConcatenationCacheStore?
+        from cache: ConcatenationCacheBinding?
     ) throws -> ConcatenationSection? {
-        guard let cacheStore,
-              let outputURL else {
-            return nil
-        }
-
-        return try cacheStore.loadSection(
-            for: outputURL,
-            key: source.sectionKey
+        try cache?.loadSection(
+            key:
+                source.sectionKey
         )
     }
 
     func saveCachedSection(
         _ section: ConcatenationSection,
         source: ConcatenationCachedSource,
-        to cacheStore: ConcatenationCacheStore?
+        to cache: ConcatenationCacheBinding?
     ) throws {
-        guard let cacheStore,
-              let outputURL else {
-            return
-        }
-
-        try cacheStore.saveSection(
+        try cache?.saveSection(
             section,
-            for: outputURL,
-            key: source.sectionKey
+            key:
+                source.sectionKey
         )
     }
 
@@ -2390,18 +2388,10 @@ private extension FileConcatenator {
     func validatedCachedArtifact(
         materialFingerprint: ContentFingerprint
     ) throws -> ConcatenationCachedArtifact? {
-        guard let workspace,
-              let outputURL else {
-            return nil
-        }
-
-        let cacheStore = ConcatenationCacheStore(
-            workspace: workspace
-        )
-
-        guard let manifest = try cacheStore.load(
-            for: outputURL
-        ) else {
+        guard let cache,
+              outputURL != nil,
+              let manifest = try cache.load()
+        else {
             return nil
         }
 
@@ -2416,13 +2406,13 @@ private extension FileConcatenator {
             manifest.artifact,
             artifact
         ) {
-            try cacheStore.save(
-                .init(
-                    output: manifest.output,
-                    sources: manifest.sources,
-                    safeguards: manifest.safeguards,
-                    artifact: artifact
-                )
+            try cache.save(
+                sources:
+                    manifest.sources,
+                safeguards:
+                    manifest.safeguards,
+                artifact:
+                    artifact
             )
         }
 
@@ -2490,18 +2480,10 @@ private extension FileConcatenator {
         renderedText: String,
         materialFingerprint: ContentFingerprint
     ) throws {
-        guard let workspace,
-              let outputURL else {
-            return
-        }
-
-        let cacheStore = ConcatenationCacheStore(
-            workspace: workspace
-        )
-
-        guard let manifest = try cacheStore.load(
-            for: outputURL
-        ) else {
+        guard let cache,
+              outputURL != nil,
+              let manifest = try cache.load()
+        else {
             return
         }
 
@@ -2510,13 +2492,13 @@ private extension FileConcatenator {
             materialFingerprint: materialFingerprint
         )
 
-        try cacheStore.save(
-            .init(
-                output: manifest.output,
-                sources: manifest.sources,
-                safeguards: manifest.safeguards,
-                artifact: artifact
-            )
+        try cache.save(
+            sources:
+                manifest.sources,
+            safeguards:
+                manifest.safeguards,
+            artifact:
+                artifact
         )
     }
 
@@ -2554,7 +2536,7 @@ private extension FileConcatenator {
         _ preparation: ConcatenationPreparedDocument,
         artifact: ConcatenationCachedArtifact
     ) throws {
-        guard let workspace,
+        guard let cache,
               let manifest = preparation.cacheManifest else {
             return
         }
@@ -2567,15 +2549,13 @@ private extension FileConcatenator {
             return
         }
 
-        try ConcatenationCacheStore(
-            workspace: workspace
-        ).save(
-            .init(
-                output: manifest.output,
-                sources: manifest.sources,
-                safeguards: manifest.safeguards,
-                artifact: artifact
-            )
+        try cache.save(
+            sources:
+                manifest.sources,
+            safeguards:
+                manifest.safeguards,
+            artifact:
+                artifact
         )
     }
 

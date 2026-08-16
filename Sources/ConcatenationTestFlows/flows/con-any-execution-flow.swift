@@ -595,6 +595,277 @@ extension ConcatenationFlowSuite {
                     "conany.execution.context-index-unchanged"
                 )
             }
+
+            Step(
+                "session render refreshes and reuses context"
+            ) {
+                let root = URL(
+                    fileURLWithPath: NSTemporaryDirectory(),
+                    isDirectory: true
+                )
+                .appendingPathComponent(
+                    "concatenation-conany-session-\(UUID().uuidString)",
+                    isDirectory: true
+                )
+
+                defer {
+                    try? FileSystem.default.remove(
+                        root
+                    )
+                }
+
+                let input = root.appendingPathComponent(
+                    "input",
+                    isDirectory: true
+                )
+
+                try FileSystem.default.directory.create(
+                    input
+                )
+
+                let sourceA = input.appendingPathComponent(
+                    "a.txt",
+                    isDirectory: false
+                )
+
+                let sourceB = input.appendingPathComponent(
+                    "b.txt",
+                    isDirectory: false
+                )
+
+                let configURL = root.appendingPathComponent(
+                    ".conany",
+                    isDirectory: false
+                )
+
+                func write(
+                    _ text: String,
+                    to url: URL
+                ) throws {
+                    _ = try StandardWriter(
+                        url
+                    ).write(
+                        text,
+                        options:
+                            .overwriteWithoutBackup
+                    )
+                }
+
+                func sourceReads(
+                    _ result: ConAnyRenderBatchResult
+                ) -> Int {
+                    result.outputs.reduce(
+                        0
+                    ) {
+                        $0
+                            + $1.result
+                            .document
+                            .statistics
+                            .cache
+                            .sourceReads
+                    }
+                }
+
+                func metadataHits(
+                    _ result: ConAnyRenderBatchResult
+                ) -> Int {
+                    result.outputs.reduce(
+                        0
+                    ) {
+                        $0
+                            + $1.result
+                            .document
+                            .statistics
+                            .cache
+                            .metadataHits
+                    }
+                }
+
+                try write(
+                    "alpha-original",
+                    to: sourceA
+                )
+
+                try write(
+                    """
+                    file("context.txt") {
+                        include(
+                            from: "\(root.path)",
+                            show: .relativeToBase
+                        ) {
+                            "input/*.txt"
+                        }
+                    }
+                    """,
+                    to: configURL
+                )
+
+                let options = ConAnyExecutionOptions(
+                    maxLinesPerFile: nil,
+                    protectSecrets: false,
+                    deepSecretInspection: false
+                )
+
+                let session = ConcatenationSession()
+
+                let first = try await session.render(
+                    conAnyAt: configURL,
+                    options: options
+                )
+
+                try Expect.equal(
+                    first.fileCount,
+                    1,
+                    "conany.session.first-file-count"
+                )
+
+                try Expect.equal(
+                    sourceReads(first),
+                    1,
+                    "conany.session.first-source-read"
+                )
+
+                let warm = try await session.render(
+                    conAnyAt: configURL,
+                    options: options
+                )
+
+                try Expect.equal(
+                    sourceReads(warm),
+                    0,
+                    "conany.session.warm-zero-source-reads"
+                )
+
+                try Expect.equal(
+                    metadataHits(warm),
+                    1,
+                    "conany.session.warm-metadata-hit"
+                )
+
+                try write(
+                    "alpha-changed",
+                    to: sourceA
+                )
+
+                try session.invalidate(
+                    source: sourceA
+                )
+
+                let invalidated = try await session.render(
+                    conAnyAt: configURL,
+                    options: options
+                )
+
+                try Expect.equal(
+                    sourceReads(invalidated),
+                    1,
+                    "conany.session.invalidated-source-read"
+                )
+
+                try Expect.true(
+                    invalidated
+                        .combinedText
+                        .contains(
+                            "alpha-changed"
+                        ),
+                    "conany.session.invalidated-content"
+                )
+
+                try write(
+                    "bravo-new",
+                    to: sourceB
+                )
+
+                let membership = try await session.render(
+                    conAnyAt: configURL,
+                    options: options
+                )
+
+                try Expect.equal(
+                    membership.fileCount,
+                    2,
+                    "conany.session.membership-file-count"
+                )
+
+                try Expect.equal(
+                    sourceReads(membership),
+                    1,
+                    "conany.session.membership-new-source-read"
+                )
+
+                try Expect.equal(
+                    metadataHits(membership),
+                    1,
+                    "conany.session.membership-existing-hit"
+                )
+
+                try write(
+                    """
+                    file("context.txt") {
+                        include(
+                            from: "\(root.path)",
+                            show: .relativeToBase
+                        ) {
+                            "input/*.txt"
+                        }
+                    }
+
+                    file("secondary.txt") {
+                        include(
+                            from: "\(root.path)",
+                            show: .relativeToBase
+                        ) {
+                            "input/b.txt"
+                        }
+                    }
+                    """,
+                    to: configURL
+                )
+
+                let reparsed = try await session.render(
+                    conAnyAt: configURL,
+                    options: options
+                )
+
+                try Expect.equal(
+                    reparsed.outputCount,
+                    2,
+                    "conany.session.reparsed-output-count"
+                )
+
+                try Expect.equal(
+                    sourceReads(reparsed),
+                    1,
+                    "conany.session.reparsed-new-scope-read"
+                )
+
+                try Expect.equal(
+                    metadataHits(reparsed),
+                    2,
+                    "conany.session.reparsed-existing-hits"
+                )
+
+                try Expect.true(
+                    !FileSystem.default.exists(
+                        root.appendingPathComponent(
+                            "context.txt",
+                            isDirectory: false
+                        )
+                    ),
+                    "conany.session.no-primary-output-artifact"
+                )
+
+                try Expect.true(
+                    !FileSystem.default.exists(
+                        root.appendingPathComponent(
+                            "secondary.txt",
+                            isDirectory: false
+                        )
+                    ),
+                    "conany.session.no-secondary-output-artifact"
+                )
+            }
+
         }
     }
 }
