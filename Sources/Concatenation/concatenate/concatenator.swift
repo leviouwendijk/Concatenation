@@ -19,6 +19,9 @@ public struct FileConcatenator: SafelyConcatenatable {
     private var sourcePreflight:
         ConcatenationSourcePreflight? = nil
 
+    private var reuseProofCache:
+        ConcatenationReuseProofCache? = nil
+
     public let copyToClipboard: Bool
     public let verbose: Bool
     public let reportWarnings: Bool
@@ -207,6 +210,18 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         copy.sourcePreflight =
             sourcePreflight
+
+        return copy
+    }
+
+    func sharingReuseProofCache(
+        _ reuseProofCache:
+            ConcatenationReuseProofCache?
+    ) -> Self {
+        var copy = self
+
+        copy.reuseProofCache =
+            reuseProofCache
 
         return copy
     }
@@ -1689,18 +1704,6 @@ private struct ConcatenationDeepSafeguardPolicy:
     let pemMarkers: [String]
     let privateKeyJSONTokens: [String]
     let treatNullByteAsBinary: Bool
-}
-
-private struct ConcatenationSectionTransformation:
-    Encodable
-{
-    let version: Int
-    let presentedPath: String
-    let selections: [ContentSelection]
-    let trimBlankLines: Bool
-    let maxLinesPerFile: Int?
-    let obscurations: [String: String]
-    let modifiedAt: Date?
 }
 
 private enum ConcatenationCacheInvariantError:
@@ -3188,18 +3191,35 @@ private extension FileConcatenator {
                 : nil
         )
 
+        if let reuseProofCache {
+            return try reuseProofCache.fingerprint(
+                for: transformation
+            ) {
+                try fingerprint(
+                    transformation
+                )
+            }
+        }
+
+        return try fingerprint(
+            transformation
+        )
+    }
+
+    func fingerprint(
+        _ transformation:
+            ConcatenationSectionTransformation
+    ) throws -> ContentFingerprint {
         let encoder = JSONEncoder()
 
         encoder.outputFormatting = [
             .sortedKeys,
         ]
 
-        let data = try encoder.encode(
-            transformation
-        )
-
         return .fingerprint(
-            for: data
+            for: try encoder.encode(
+                transformation
+            )
         )
     }
 

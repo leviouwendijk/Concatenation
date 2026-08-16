@@ -568,6 +568,44 @@ func printConAnyRunSummary(
         )
     }
 
+    let reuseProofs =
+        result.reuseProofs
+
+    if reuseProofs.lookupCount > 0 {
+        sections.append(
+            .init(
+                title: "Reuse proofs",
+                items: [
+                    .field(
+                        label: "lookups",
+                        value: formattedCount(
+                            reuseProofs.lookupCount
+                        )
+                    ),
+                    .field(
+                        label: "unique proofs",
+                        value: formattedCount(
+                            reuseProofs.uniqueProofCount
+                        )
+                    ),
+                    .field(
+                        label: "shared hits",
+                        value: formattedCount(
+                            reuseProofs.sharedHitCount
+                        )
+                    ),
+                    .field(
+                        label: "computed",
+                        value: formattedCount(
+                            reuseProofs
+                                .fingerprintComputationCount
+                        )
+                    ),
+                ]
+            )
+        )
+    }
+
     let execution =
         result.statistics
 

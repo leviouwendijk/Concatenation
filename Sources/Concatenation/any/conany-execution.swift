@@ -340,6 +340,32 @@ public struct ConAnySourcePreflightStatistics:
     }
 }
 
+public struct ConAnyReuseProofStatistics:
+    Sendable,
+    Equatable
+{
+    public let lookupCount: Int
+    public let uniqueProofCount: Int
+    public let sharedHitCount: Int
+    public let fingerprintComputationCount: Int
+
+    public init(
+        lookupCount: Int = 0,
+        uniqueProofCount: Int = 0,
+        sharedHitCount: Int = 0,
+        fingerprintComputationCount: Int = 0
+    ) {
+        self.lookupCount =
+            lookupCount
+        self.uniqueProofCount =
+            uniqueProofCount
+        self.sharedHitCount =
+            sharedHitCount
+        self.fingerprintComputationCount =
+            fingerprintComputationCount
+    }
+}
+
 public struct ConAnyWriteStatistics:
     Sendable,
     Equatable
@@ -385,6 +411,8 @@ public struct ConAnyWriteBatchResult {
     public let resolution: ConAnyResolutionStatistics
     public let sourcePreflight:
         ConAnySourcePreflightStatistics
+    public let reuseProofs:
+        ConAnyReuseProofStatistics
     public let statistics: ConAnyWriteStatistics
 
     public init(
@@ -394,6 +422,8 @@ public struct ConAnyWriteBatchResult {
         resolution: ConAnyResolutionStatistics = .init(),
         sourcePreflight:
             ConAnySourcePreflightStatistics = .init(),
+        reuseProofs:
+            ConAnyReuseProofStatistics = .init(),
         statistics: ConAnyWriteStatistics = .init()
     ) {
         self.outputs = outputs
@@ -402,6 +432,8 @@ public struct ConAnyWriteBatchResult {
         self.resolution = resolution
         self.sourcePreflight =
             sourcePreflight
+        self.reuseProofs =
+            reuseProofs
         self.statistics = statistics
     }
 
@@ -935,6 +967,9 @@ public struct ConAnyExecution: SafelyConcatenatable {
                     .sharedMetadataReuseCount
             )
 
+        let reuseProofCache =
+            ConcatenationReuseProofCache()
+
         let workspace = ConcatenationWorkspace(
             configuration: configURL
         )
@@ -978,7 +1013,9 @@ public struct ConAnyExecution: SafelyConcatenatable {
                 outputURL: output.outputURL,
                 workspace: workspace,
                 sourcePreflight:
-                    sourcePreflightResult.preflight
+                    sourcePreflightResult.preflight,
+                reuseProofCache:
+                    reuseProofCache
             )
 
             let result = try await concatenator.write(
@@ -992,6 +1029,21 @@ public struct ConAnyExecution: SafelyConcatenatable {
                 )
             )
         }
+
+        let reuseProofSnapshot =
+            reuseProofCache.snapshot()
+
+        let reuseProofStatistics =
+            ConAnyReuseProofStatistics(
+                lookupCount:
+                    reuseProofSnapshot.lookupCount,
+                uniqueProofCount:
+                    reuseProofSnapshot.uniqueProofCount,
+                sharedHitCount:
+                    reuseProofSnapshot.sharedHitCount,
+                fingerprintComputationCount:
+                    reuseProofSnapshot.fingerprintComputationCount
+            )
 
         let outputDuration =
             Date().timeIntervalSince(
@@ -1022,6 +1074,8 @@ public struct ConAnyExecution: SafelyConcatenatable {
             resolution: resolvedBatch.statistics,
             sourcePreflight:
                 sourcePreflightStatistics,
+            reuseProofs:
+                reuseProofStatistics,
             statistics: .init(
                 duration:
                     Date().timeIntervalSince(
@@ -1105,7 +1159,9 @@ private extension ConAnyExecution {
         workspace: ConcatenationWorkspace?,
         cache: ConcatenationCacheBinding? = nil,
         sourcePreflight:
-            ConcatenationSourcePreflight? = nil
+            ConcatenationSourcePreflight? = nil,
+        reuseProofCache:
+            ConcatenationReuseProofCache? = nil
     ) -> FileConcatenator {
         FileConcatenator(
             plan:
@@ -1138,6 +1194,9 @@ private extension ConAnyExecution {
         )
         .sharingSourcePreflight(
             sourcePreflight
+        )
+        .sharingReuseProofCache(
+            reuseProofCache
         )
     }
 

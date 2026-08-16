@@ -1012,6 +1012,31 @@ extension ConcatenationFlowSuite {
                 )
 
                 try Expect.equal(
+                    warm.reuseProofs.lookupCount,
+                    4,
+                    "conany.reuse-proofs.warm-reference-count"
+                )
+
+                try Expect.equal(
+                    warm.reuseProofs.uniqueProofCount,
+                    2,
+                    "conany.reuse-proofs.warm-unique-count"
+                )
+
+                try Expect.equal(
+                    warm.reuseProofs.sharedHitCount,
+                    2,
+                    "conany.reuse-proofs.warm-shared-hit-count"
+                )
+
+                try Expect.equal(
+                    warm.reuseProofs
+                        .fingerprintComputationCount,
+                    2,
+                    "conany.reuse-proofs.warm-computation-count"
+                )
+
+                try Expect.equal(
                     warm.cache.sourceReads,
                     0,
                     "conany.preflight.warm-source-reads"
