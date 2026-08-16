@@ -38,27 +38,51 @@ struct ConcatenationBenchmark {
             ),
         ]
 
-        print(
-            [
-                "scale",
-                "scenario",
-                "median_ms",
-                "p95_ms",
-                "safeguard_reads",
-                "safeguard_hits",
-                "source_reads",
-                "metadata_hits",
-                "rebuilds",
-                "render",
-                "write",
-            ].joined(
-                separator: "\t"
-            )
-        )
+        let cacheBackends =
+            ProcessInfo.processInfo.environment[
+                "CON_BENCH_CACHE_BACKENDS"
+            ] == "1"
 
-        for scale in scales {
-            try await run(
-                scale: scale,
+        let cacheOnly =
+            ProcessInfo.processInfo.environment[
+                "CON_BENCH_CACHE_ONLY"
+            ] == "1"
+
+        if !cacheOnly {
+            print(
+                [
+                    "scale",
+                    "scenario",
+                    "median_ms",
+                    "p95_ms",
+                    "safeguard_reads",
+                    "safeguard_hits",
+                    "source_reads",
+                    "metadata_hits",
+                    "rebuilds",
+                    "render",
+                    "write",
+                ].joined(
+                    separator: "\t"
+                )
+            )
+
+            for scale in scales {
+                try await run(
+                    scale: scale,
+                    samples: samples,
+                    deepInspection: deepInspection
+                )
+            }
+        }
+
+        if cacheBackends || cacheOnly {
+            if !cacheOnly {
+                print()
+            }
+
+            try await CacheBackendBenchmark.run(
+                scales: scales,
                 samples: samples,
                 deepInspection: deepInspection
             )
