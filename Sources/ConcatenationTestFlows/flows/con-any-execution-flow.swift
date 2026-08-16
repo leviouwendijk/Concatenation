@@ -866,6 +866,170 @@ extension ConcatenationFlowSuite {
                 )
             }
 
+            Step(
+                "shared source preflight deduplicates overlapping outputs"
+            ) {
+                let root = URL(
+                    fileURLWithPath:
+                        NSTemporaryDirectory(),
+                    isDirectory: true
+                )
+                .appendingPathComponent(
+                    "concatenation-conany-shared-preflight-\(UUID().uuidString)",
+                    isDirectory: true
+                )
+
+                defer {
+                    try? FileSystem.default.remove(
+                        root
+                    )
+                }
+
+                let input = root.appendingPathComponent(
+                    "input",
+                    isDirectory: true
+                )
+
+                try FileSystem.default.directory.create(
+                    input
+                )
+
+                let sourceA = input.appendingPathComponent(
+                    "a.txt",
+                    isDirectory: false
+                )
+
+                let sourceB = input.appendingPathComponent(
+                    "b.txt",
+                    isDirectory: false
+                )
+
+                _ = try StandardWriter(
+                    sourceA
+                ).write(
+                    "alpha",
+                    options: .overwriteWithoutBackup
+                )
+
+                _ = try StandardWriter(
+                    sourceB
+                ).write(
+                    "bravo",
+                    options: .overwriteWithoutBackup
+                )
+
+                let configURL = root.appendingPathComponent(
+                    ".conany",
+                    isDirectory: false
+                )
+
+                _ = try StandardWriter(
+                    configURL
+                ).write(
+                    """
+                    file("first.txt") {
+                        include(
+                            from: "\(root.path)",
+                            show: .relativeToBase
+                        ) {
+                            "input/*.txt"
+                        }
+                    }
+
+                    file("second.txt") {
+                        include(
+                            from: "\(root.path)",
+                            show: .relativeToBase
+                        ) {
+                            "input/*.txt"
+                        }
+                    }
+                    """,
+                    options: .overwriteWithoutBackup
+                )
+
+                let execution = try ConAnyExecution(
+                    configURL: configURL,
+                    options: .init(
+                        ignoreMap: IgnoreMap(),
+                        maxLinesPerFile: nil,
+                        protectSecrets: false,
+                        deepSecretInspection: false
+                    )
+                )
+
+                let cold = try await execution.write()
+
+                try Expect.equal(
+                    cold.sourcePreflight
+                        .sourceReferenceCount,
+                    4,
+                    "conany.preflight.cold-reference-count"
+                )
+
+                try Expect.equal(
+                    cold.sourcePreflight
+                        .uniqueSourceCount,
+                    2,
+                    "conany.preflight.cold-unique-source-count"
+                )
+
+                try Expect.equal(
+                    cold.sourcePreflight
+                        .uniqueResolvedSourceCount,
+                    2,
+                    "conany.preflight.cold-unique-resolved-count"
+                )
+
+                try Expect.equal(
+                    cold.sourcePreflight
+                        .metadataInspectionCount,
+                    2,
+                    "conany.preflight.cold-inspection-count"
+                )
+
+                try Expect.equal(
+                    cold.sourcePreflight
+                        .sharedMetadataReuseCount,
+                    2,
+                    "conany.preflight.cold-shared-hit-count"
+                )
+
+                let warm = try await execution.write()
+
+                try Expect.equal(
+                    warm.sourcePreflight
+                        .metadataInspectionCount,
+                    2,
+                    "conany.preflight.warm-inspection-count"
+                )
+
+                try Expect.equal(
+                    warm.sourcePreflight
+                        .sharedMetadataReuseCount,
+                    2,
+                    "conany.preflight.warm-shared-hit-count"
+                )
+
+                try Expect.equal(
+                    warm.cache.sourceReads,
+                    0,
+                    "conany.preflight.warm-source-reads"
+                )
+
+                try Expect.equal(
+                    warm.renderedOutputCount,
+                    0,
+                    "conany.preflight.warm-rendered-output-count"
+                )
+
+                try Expect.equal(
+                    warm.writtenOutputCount,
+                    0,
+                    "conany.preflight.warm-written-output-count"
+                )
+            }
+
         }
     }
 }

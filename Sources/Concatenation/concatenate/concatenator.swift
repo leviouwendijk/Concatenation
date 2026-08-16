@@ -16,6 +16,9 @@ public struct FileConcatenator: SafelyConcatenatable {
     public let workspace: ConcatenationWorkspace?
     public let cache: ConcatenationCacheBinding?
 
+    private var sourcePreflight:
+        ConcatenationSourcePreflight? = nil
+
     public let copyToClipboard: Bool
     public let verbose: Bool
     public let reportWarnings: Bool
@@ -194,6 +197,18 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         self.deepSecretInspection =
             deepSecretInspection
+    }
+
+    func sharingSourcePreflight(
+        _ sourcePreflight:
+            ConcatenationSourcePreflight?
+    ) -> Self {
+        var copy = self
+
+        copy.sourcePreflight =
+            sourcePreflight
+
+        return copy
     }
 
     public init(
@@ -536,7 +551,7 @@ public struct FileConcatenator: SafelyConcatenatable {
 
     private func prepareDocument(
         preinspected initialPreinspections: [
-            URL: [FileMetadataSnapshot]
+            URL: FileMetadataSnapshot
         ],
         presafeguards initialPresafeguards: [
             URL: ConcatenationCachedSafeguard
@@ -553,7 +568,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         persistCache: Bool = true
     ) throws -> ConcatenationPreparedDocument {
         let fileManager = FileManager.default
-        var preinspected = initialPreinspections
+        let preinspected = initialPreinspections
         let presafeguards = initialPresafeguards
         var preloadedSections = initialPreloadedSections
         var prereads = initialPrereads
@@ -658,28 +673,20 @@ public struct FileConcatenator: SafelyConcatenatable {
             }
 
             do {
-                let resolved = try resolveSymlink(
-                    at: fileURL
+                let resolved = try resolvedSourceURL(
+                    for: fileURL
                 )
 
                 let metadata: FileMetadataSnapshot
                 let resolvedKey = resolved.standardizedFileURL
 
-                if var candidates = preinspected[
-                    resolvedKey
-                ],
-                !candidates.isEmpty {
-                    metadata = candidates.removeFirst()
-
-                    if candidates.isEmpty {
-                        preinspected.removeValue(
-                            forKey: resolvedKey
-                        )
-                    } else {
-                        preinspected[
-                            resolvedKey
-                        ] = candidates
-                    }
+                if let preinspectedMetadata =
+                    preinspected[
+                        resolvedKey
+                    ]
+                {
+                    metadata =
+                        preinspectedMetadata
                 } else {
                     metadata = try FileInspector(
                         resolved
@@ -1568,7 +1575,7 @@ private struct ConcatenationPreparationPreflight:
     let duration: TimeInterval
     let cachedManifest: ConcatenationCacheManifest?
     let preinspected:
-        [URL: [FileMetadataSnapshot]]
+        [URL: FileMetadataSnapshot]
     let presafeguards:
         [URL: ConcatenationCachedSafeguard]
     let cacheLoadDuration: TimeInterval
@@ -1944,7 +1951,7 @@ private extension FileConcatenator {
 
     func preinspectSafeguards(
         preinspected: [
-            URL: [FileMetadataSnapshot]
+            URL: FileMetadataSnapshot
         ],
         cachedManifest: ConcatenationCacheManifest?,
         concurrency: IOConcurrency
@@ -1988,8 +1995,8 @@ private extension FileConcatenator {
                 continue
             }
 
-            guard let resolved = try? resolveSymlink(
-                at: file
+            guard let resolved = try? resolvedSourceURL(
+                for: file
             ) else {
                 continue
             }
@@ -2004,7 +2011,7 @@ private extension FileConcatenator {
 
             guard let metadata = preinspected[
                 key
-            ]?.first else {
+            ] else {
                 continue
             }
 
@@ -2097,8 +2104,6 @@ private extension FileConcatenator {
         }
 
         let fileManager = FileManager.default
-        var remainingMetadata =
-            preflight.preinspected
 
         var cachedSourceIndex = 0
         var blockedFileCount = 0
@@ -2147,8 +2152,8 @@ private extension FileConcatenator {
                 continue
             }
 
-            guard let resolved = try? resolveSymlink(
-                at: file
+            guard let resolved = try? resolvedSourceURL(
+                for: file
             ) else {
                 return nil
             }
@@ -2156,23 +2161,12 @@ private extension FileConcatenator {
             let key =
                 resolved.standardizedFileURL
 
-            guard var metadataCandidates =
-                    remainingMetadata[key],
-                  !metadataCandidates.isEmpty
+            guard let metadata =
+                    preflight.preinspected[
+                        key
+                    ]
             else {
                 return nil
-            }
-
-            let metadata =
-                metadataCandidates.removeFirst()
-
-            if metadataCandidates.isEmpty {
-                remainingMetadata.removeValue(
-                    forKey: key
-                )
-            } else {
-                remainingMetadata[key] =
-                    metadataCandidates
             }
 
             metadataInspections += 1
@@ -2289,7 +2283,7 @@ private extension FileConcatenator {
 
     func preloadCachedSections(
         preinspected: [
-            URL: [FileMetadataSnapshot]
+            URL: FileMetadataSnapshot
         ],
         presafeguards: [
             URL: ConcatenationCachedSafeguard
@@ -2306,7 +2300,6 @@ private extension FileConcatenator {
 
         let fileManager = FileManager.default
 
-        var remainingMetadata = preinspected
         var cachedSourcesByFile: [
             URL: [ConcatenationCachedSource]
         ] = [:]
@@ -2334,31 +2327,20 @@ private extension FileConcatenator {
                 continue
             }
 
-            guard let resolved = try? resolveSymlink(
-                at: file
+            guard let resolved = try? resolvedSourceURL(
+                for: file
             ) else {
                 continue
             }
 
             let key = resolved.standardizedFileURL
 
-            guard var metadataCandidates = remainingMetadata[
-                key
-            ],
-            !metadataCandidates.isEmpty else {
+            guard let metadata =
+                    preinspected[
+                        key
+                    ]
+            else {
                 continue
-            }
-
-            let metadata = metadataCandidates.removeFirst()
-
-            if metadataCandidates.isEmpty {
-                remainingMetadata.removeValue(
-                    forKey: key
-                )
-            } else {
-                remainingMetadata[
-                    key
-                ] = metadataCandidates
             }
 
             if protectSecrets
@@ -2436,7 +2418,7 @@ private extension FileConcatenator {
 
     func preReadSources(
         preinspected: [
-            URL: [FileMetadataSnapshot]
+            URL: FileMetadataSnapshot
         ],
         presafeguards: [
             URL: ConcatenationCachedSafeguard
@@ -2451,7 +2433,6 @@ private extension FileConcatenator {
     ] {
         let fileManager = FileManager.default
 
-        var remainingMetadata = preinspected
         var cachedSourcesByFile: [
             URL: [ConcatenationCachedSource]
         ] = [:]
@@ -2479,31 +2460,20 @@ private extension FileConcatenator {
                 continue
             }
 
-            guard let resolved = try? resolveSymlink(
-                at: file
+            guard let resolved = try? resolvedSourceURL(
+                for: file
             ) else {
                 continue
             }
 
             let key = resolved.standardizedFileURL
 
-            guard var metadataCandidates = remainingMetadata[
-                key
-            ],
-            !metadataCandidates.isEmpty else {
+            guard let metadata =
+                    preinspected[
+                        key
+                    ]
+            else {
                 continue
-            }
-
-            let metadata = metadataCandidates.removeFirst()
-
-            if metadataCandidates.isEmpty {
-                remainingMetadata.removeValue(
-                    forKey: key
-                )
-            } else {
-                remainingMetadata[
-                    key
-                ] = metadataCandidates
             }
 
             if protectSecrets
@@ -2589,14 +2559,37 @@ private extension FileConcatenator {
         )
     }
 
+    func resolvedSourceURL(
+        for file: URL
+    ) throws -> URL {
+        if let resolved =
+            sourcePreflight?
+            .resolvedURL(
+                for: file
+            )
+        {
+            return resolved
+        }
+
+        return try resolveSymlink(
+            at: file
+        )
+    }
+
     func preinspectSources(
         concurrency: IOConcurrency
     ) async throws -> [
-        URL: [FileMetadataSnapshot]
+        URL: FileMetadataSnapshot
     ] {
-        let resolvedSources = plan.sources.compactMap {
-            source -> URL? in
+        if let sourcePreflight {
+            return sourcePreflight
+                .metadataByResolvedSource
+        }
 
+        var uniqueResolvedSources: [URL] = []
+        var scheduled: Set<URL> = []
+
+        for source in plan.sources {
             let file = source.file
 
             if protectSecrets
@@ -2605,18 +2598,33 @@ private extension FileConcatenator {
                     file
                 )
             {
-                return nil
+                continue
             }
 
-            return try? resolveSymlink(
-                at: file
+            guard let resolved = try? resolvedSourceURL(
+                for: file
+            ) else {
+                continue
+            }
+
+            let key =
+                resolved.standardizedFileURL
+
+            guard scheduled.insert(
+                key
+            ).inserted else {
+                continue
+            }
+
+            uniqueResolvedSources.append(
+                key
             )
         }
 
         let inspections = try await IOExecutor(
             concurrency: concurrency
         ).map(
-            resolvedSources
+            uniqueResolvedSources
         ) { resolved in
             ConcatenationPreinspection(
                 resolved: resolved,
@@ -2626,24 +2634,24 @@ private extension FileConcatenator {
             )
         }
 
-        var result: [
-            URL: [FileMetadataSnapshot]
-        ] = [:]
+        return Dictionary(
+            uniqueKeysWithValues:
+                inspections.compactMap {
+                    inspection in
 
-        for inspection in inspections {
-            guard let metadata = inspection.metadata else {
-                continue
-            }
+                    guard let metadata =
+                            inspection.metadata
+                    else {
+                        return nil
+                    }
 
-            result[
-                inspection.resolved.standardizedFileURL,
-                default: []
-            ].append(
-                metadata
-            )
-        }
-
-        return result
+                    return (
+                        inspection.resolved
+                            .standardizedFileURL,
+                        metadata
+                    )
+                }
+        )
     }
 
     func cacheStateMatches(

@@ -514,6 +514,60 @@ func printConAnyRunSummary(
         )
     )
 
+    let sourcePreflight =
+        result.sourcePreflight
+
+    if sourcePreflight.sourceReferenceCount > 0 {
+        sections.append(
+            .init(
+                title: "Source preflight",
+                items: [
+                    .field(
+                        label: "total",
+                        value: formattedDuration(
+                            sourcePreflight.duration
+                        )
+                    ),
+                    .field(
+                        label: "references",
+                        value: formattedCount(
+                            sourcePreflight
+                                .sourceReferenceCount
+                        )
+                    ),
+                    .field(
+                        label: "unique paths",
+                        value: formattedCount(
+                            sourcePreflight
+                                .uniqueSourceCount
+                        )
+                    ),
+                    .field(
+                        label: "resolved files",
+                        value: formattedCount(
+                            sourcePreflight
+                                .uniqueResolvedSourceCount
+                        )
+                    ),
+                    .field(
+                        label: "inspections",
+                        value: formattedCount(
+                            sourcePreflight
+                                .metadataInspectionCount
+                        )
+                    ),
+                    .field(
+                        label: "shared hits",
+                        value: formattedCount(
+                            sourcePreflight
+                                .sharedMetadataReuseCount
+                        )
+                    ),
+                ]
+            )
+        )
+    }
+
     let execution =
         result.statistics
 

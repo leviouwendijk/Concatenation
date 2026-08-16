@@ -307,6 +307,39 @@ public enum ConAnyExecutionKind:
     case rebuilt
 }
 
+public struct ConAnySourcePreflightStatistics:
+    Sendable,
+    Equatable
+{
+    public let duration: TimeInterval
+    public let sourceReferenceCount: Int
+    public let uniqueSourceCount: Int
+    public let uniqueResolvedSourceCount: Int
+    public let metadataInspectionCount: Int
+    public let sharedMetadataReuseCount: Int
+
+    public init(
+        duration: TimeInterval = 0,
+        sourceReferenceCount: Int = 0,
+        uniqueSourceCount: Int = 0,
+        uniqueResolvedSourceCount: Int = 0,
+        metadataInspectionCount: Int = 0,
+        sharedMetadataReuseCount: Int = 0
+    ) {
+        self.duration = duration
+        self.sourceReferenceCount =
+            sourceReferenceCount
+        self.uniqueSourceCount =
+            uniqueSourceCount
+        self.uniqueResolvedSourceCount =
+            uniqueResolvedSourceCount
+        self.metadataInspectionCount =
+            metadataInspectionCount
+        self.sharedMetadataReuseCount =
+            sharedMetadataReuseCount
+    }
+}
+
 public struct ConAnyWriteStatistics:
     Sendable,
     Equatable
@@ -350,6 +383,8 @@ public struct ConAnyWriteBatchResult {
     public let skipped: [ConAnyResolvedOutput]
     public let contextIndexAction: ConAnyContextIndexAction
     public let resolution: ConAnyResolutionStatistics
+    public let sourcePreflight:
+        ConAnySourcePreflightStatistics
     public let statistics: ConAnyWriteStatistics
 
     public init(
@@ -357,12 +392,16 @@ public struct ConAnyWriteBatchResult {
         skipped: [ConAnyResolvedOutput],
         contextIndexAction: ConAnyContextIndexAction,
         resolution: ConAnyResolutionStatistics = .init(),
+        sourcePreflight:
+            ConAnySourcePreflightStatistics = .init(),
         statistics: ConAnyWriteStatistics = .init()
     ) {
         self.outputs = outputs
         self.skipped = skipped
         self.contextIndexAction = contextIndexAction
         self.resolution = resolution
+        self.sourcePreflight =
+            sourcePreflight
         self.statistics = statistics
     }
 
@@ -548,7 +587,7 @@ public enum ConAnyExecutionError:
     }
 }
 
-public struct ConAnyExecution {
+public struct ConAnyExecution: SafelyConcatenatable {
     public let configURL: URL
     public let configuration: ConAnyConfig
     public let options: ConAnyExecutionOptions
@@ -848,6 +887,54 @@ public struct ConAnyExecution {
         let outputStartedAt =
             Date()
 
+        let sourcePreflightStartedAt =
+            Date()
+
+        let sourceReferences =
+            resolved.flatMap {
+                $0.sources.map(
+                    \.file
+                )
+            }
+            .filter { source in
+                !(options.protectSecrets
+                    && !options.allowSecrets
+                    && isProtectedFile(
+                        source
+                    ))
+            }
+
+        let sourcePreflightResult =
+            try await ConcatenationSourcePreflight.inspect(
+                sources:
+                    sourceReferences,
+                concurrency:
+                    concurrency
+            )
+
+        let sourcePreflightStatistics =
+            ConAnySourcePreflightStatistics(
+                duration:
+                    Date().timeIntervalSince(
+                        sourcePreflightStartedAt
+                    ),
+                sourceReferenceCount:
+                    sourcePreflightResult
+                    .sourceReferenceCount,
+                uniqueSourceCount:
+                    sourcePreflightResult
+                    .uniqueSourceCount,
+                uniqueResolvedSourceCount:
+                    sourcePreflightResult
+                    .uniqueResolvedSourceCount,
+                metadataInspectionCount:
+                    sourcePreflightResult
+                    .metadataInspectionCount,
+                sharedMetadataReuseCount:
+                    sourcePreflightResult
+                    .sharedMetadataReuseCount
+            )
+
         let workspace = ConcatenationWorkspace(
             configuration: configURL
         )
@@ -889,7 +976,9 @@ public struct ConAnyExecution {
             let concatenator = makeConcatenator(
                 for: output,
                 outputURL: output.outputURL,
-                workspace: workspace
+                workspace: workspace,
+                sourcePreflight:
+                    sourcePreflightResult.preflight
             )
 
             let result = try await concatenator.write(
@@ -931,6 +1020,8 @@ public struct ConAnyExecution {
             skipped: skipped,
             contextIndexAction: contextIndexAction,
             resolution: resolvedBatch.statistics,
+            sourcePreflight:
+                sourcePreflightStatistics,
             statistics: .init(
                 duration:
                     Date().timeIntervalSince(
@@ -1012,7 +1103,9 @@ private extension ConAnyExecution {
         for resolved: ConAnyResolvedOutput,
         outputURL: URL?,
         workspace: ConcatenationWorkspace?,
-        cache: ConcatenationCacheBinding? = nil
+        cache: ConcatenationCacheBinding? = nil,
+        sourcePreflight:
+            ConcatenationSourcePreflight? = nil
     ) -> FileConcatenator {
         FileConcatenator(
             plan:
@@ -1042,6 +1135,9 @@ private extension ConAnyExecution {
                 options.failOnBlockedFiles,
             deepSecretInspection:
                 options.deepSecretInspection
+        )
+        .sharingSourcePreflight(
+            sourcePreflight
         )
     }
 
