@@ -22,6 +22,7 @@ public struct ConcatenationPreparationStatistics:
     public let cacheLoadDuration: TimeInterval
     public let sourceInspectionDuration: TimeInterval
     public let safeguardDuration: TimeInterval
+    public let reuseValidationDuration: TimeInterval
     public let sectionPreloadDuration: TimeInterval
     public let sourcePrereadDuration: TimeInterval
     public let assemblyDuration: TimeInterval
@@ -31,6 +32,7 @@ public struct ConcatenationPreparationStatistics:
         cacheLoadDuration: TimeInterval = 0,
         sourceInspectionDuration: TimeInterval = 0,
         safeguardDuration: TimeInterval = 0,
+        reuseValidationDuration: TimeInterval = 0,
         sectionPreloadDuration: TimeInterval = 0,
         sourcePrereadDuration: TimeInterval = 0,
         assemblyDuration: TimeInterval = 0
@@ -41,6 +43,8 @@ public struct ConcatenationPreparationStatistics:
             sourceInspectionDuration
         self.safeguardDuration =
             safeguardDuration
+        self.reuseValidationDuration =
+            reuseValidationDuration
         self.sectionPreloadDuration =
             sectionPreloadDuration
         self.sourcePrereadDuration =
@@ -53,6 +57,7 @@ public struct ConcatenationPreparationStatistics:
         cacheLoadDuration
             + sourceInspectionDuration
             + safeguardDuration
+            + reuseValidationDuration
             + sectionPreloadDuration
             + sourcePrereadDuration
             + assemblyDuration
@@ -82,6 +87,9 @@ public struct ConcatenationPreparationStatistics:
             safeguardDuration:
                 lhs.safeguardDuration
                 + rhs.safeguardDuration,
+            reuseValidationDuration:
+                lhs.reuseValidationDuration
+                + rhs.reuseValidationDuration,
             sectionPreloadDuration:
                 lhs.sectionPreloadDuration
                 + rhs.sectionPreloadDuration,
@@ -241,7 +249,10 @@ public struct ConcatenationSourceActivity:
 }
 
 public struct ConcatenationWriteResult: Sendable {
-    public let document: ConcatenationDocument
+    /// Nil only when an unchanged write was proven before document materialization.
+    public let document: ConcatenationDocument?
+    public let documentStatistics: ConcatenationStatistics
+    public let warnings: [ConcatenationWarning]
     public let renderResult: ConcatenationRenderResult?
     public let writeResult: SafeWriteResult?
     public let renderedLineCount: Int
@@ -259,8 +270,29 @@ public struct ConcatenationWriteResult: Sendable {
         statistics: ConcatenationWriteStatistics = .init()
     ) {
         self.document = document
+        self.documentStatistics = document.statistics
+        self.warnings = document.warnings
         self.renderResult = renderResult
         self.writeResult = writeResult
+        self.renderedLineCount = renderedLineCount
+        self.statistics = statistics
+        self.sourceActivities =
+            sourceActivities
+    }
+
+    public init(
+        documentStatistics: ConcatenationStatistics,
+        warnings: [ConcatenationWarning],
+        renderedLineCount: Int,
+        sourceActivities:
+            [ConcatenationSourceActivity] = [],
+        statistics: ConcatenationWriteStatistics = .init()
+    ) {
+        self.document = nil
+        self.documentStatistics = documentStatistics
+        self.warnings = warnings
+        self.renderResult = nil
+        self.writeResult = nil
         self.renderedLineCount = renderedLineCount
         self.statistics = statistics
         self.sourceActivities =
@@ -277,5 +309,9 @@ public struct ConcatenationWriteResult: Sendable {
 
     public var performedWrite: Bool {
         writeResult != nil
+    }
+
+    public var materializedDocument: Bool {
+        document != nil
     }
 }

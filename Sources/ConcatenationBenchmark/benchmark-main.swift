@@ -386,7 +386,7 @@ internal final class BenchmarkFixture {
             let result = measured.result
 
             try require(
-                result.document.statistics.cache.safeguardReads
+                result.documentStatistics.cache.safeguardReads
                     == (
                         deepInspection
                             ? scale.files
@@ -396,25 +396,25 @@ internal final class BenchmarkFixture {
             )
 
             try require(
-                result.document.statistics.cache.safeguardHits
+                result.documentStatistics.cache.safeguardHits
                     == 0,
                 "cold safeguardHits"
             )
 
             try require(
-                result.document.statistics.cache.sourceReads
+                result.documentStatistics.cache.sourceReads
                     == scale.files,
                 "cold sourceReads"
             )
 
             try require(
-                result.document.statistics.cache.metadataHits
+                result.documentStatistics.cache.metadataHits
                     == 0,
                 "cold metadataHits"
             )
 
             try require(
-                result.document.statistics.cache.rebuilds
+                result.documentStatistics.cache.rebuilds
                     == scale.files,
                 "cold rebuilds"
             )
@@ -465,13 +465,13 @@ internal final class BenchmarkFixture {
             let result = measured.result
 
             try require(
-                result.document.statistics.cache.safeguardReads
+                result.documentStatistics.cache.safeguardReads
                     == 0,
                 "warm safeguardReads"
             )
 
             try require(
-                result.document.statistics.cache.safeguardHits
+                result.documentStatistics.cache.safeguardHits
                     == (
                         deepInspection
                             ? scale.files
@@ -481,19 +481,19 @@ internal final class BenchmarkFixture {
             )
 
             try require(
-                result.document.statistics.cache.sourceReads
+                result.documentStatistics.cache.sourceReads
                     == 0,
                 "warm sourceReads"
             )
 
             try require(
-                result.document.statistics.cache.metadataHits
+                result.documentStatistics.cache.metadataHits
                     == scale.files,
                 "warm metadataHits"
             )
 
             try require(
-                result.document.statistics.cache.rebuilds
+                result.documentStatistics.cache.rebuilds
                     == 0,
                 "warm rebuilds"
             )
@@ -563,7 +563,7 @@ internal final class BenchmarkFixture {
             let result = measured.result
 
             try require(
-                result.document.statistics.cache.safeguardReads
+                result.documentStatistics.cache.safeguardReads
                     == (
                         deepInspection
                             ? changeCount
@@ -573,7 +573,7 @@ internal final class BenchmarkFixture {
             )
 
             try require(
-                result.document.statistics.cache.safeguardHits
+                result.documentStatistics.cache.safeguardHits
                     == (
                         deepInspection
                             ? scale.files - changeCount
@@ -583,19 +583,19 @@ internal final class BenchmarkFixture {
             )
 
             try require(
-                result.document.statistics.cache.sourceReads
+                result.documentStatistics.cache.sourceReads
                     == changeCount,
                 "\(name) sourceReads"
             )
 
             try require(
-                result.document.statistics.cache.metadataHits
+                result.documentStatistics.cache.metadataHits
                     == scale.files - changeCount,
                 "\(name) metadataHits"
             )
 
             try require(
-                result.document.statistics.cache.rebuilds
+                result.documentStatistics.cache.rebuilds
                     == changeCount,
                 "\(name) rebuilds"
             )
@@ -629,10 +629,8 @@ internal final class BenchmarkFixture {
         durations: [Double],
         last: ConcatenationWriteResult?
     ) -> BenchmarkMeasurement {
-        let cache = last?
-            .document
-            .statistics
-            .cache
+        let cache =
+            last?.documentStatistics.cache
             ?? .init()
 
         return BenchmarkMeasurement(

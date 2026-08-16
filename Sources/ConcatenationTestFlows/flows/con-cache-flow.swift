@@ -764,13 +764,13 @@ extension ConcatenationFlowSuite {
                 )
 
                 try Expect.equal(
-                    secondWrite.document.statistics.cache.sourceReads,
+                    secondWrite.documentStatistics.cache.sourceReads,
                     0,
                     "cache.artifact-second-write-zero-source-reads"
                 )
 
                 try Expect.equal(
-                    secondWrite.document.statistics.cache.metadataHits,
+                    secondWrite.documentStatistics.cache.metadataHits,
                     1,
                     "cache.artifact-second-write-metadata-hit"
                 )
@@ -1074,28 +1074,28 @@ extension ConcatenationFlowSuite {
                 let changed = try concatenator.write()
 
                 try Expect.equal(
-                    changed.document.statistics.cache
+                    changed.documentStatistics.cache
                         .metadataInspections,
                     3,
                     "cache.multi-selective-inspections"
                 )
 
                 try Expect.equal(
-                    changed.document.statistics.cache
+                    changed.documentStatistics.cache
                         .metadataHits,
                     2,
                     "cache.multi-selective-metadata-hits"
                 )
 
                 try Expect.equal(
-                    changed.document.statistics.cache
+                    changed.documentStatistics.cache
                         .sourceReads,
                     1,
                     "cache.multi-selective-source-reads"
                 )
 
                 try Expect.equal(
-                    changed.document.statistics.cache
+                    changed.documentStatistics.cache
                         .rebuilds,
                     1,
                     "cache.multi-selective-rebuilds"
@@ -1149,14 +1149,14 @@ extension ConcatenationFlowSuite {
                 let stable = try concatenator.write()
 
                 try Expect.equal(
-                    stable.document.statistics.cache
+                    stable.documentStatistics.cache
                         .sourceReads,
                     0,
                     "cache.multi-selective-stable-zero-reads"
                 )
 
                 try Expect.equal(
-                    stable.document.statistics.cache
+                    stable.documentStatistics.cache
                         .metadataHits,
                     3,
                     "cache.multi-selective-stable-hits"
@@ -1225,19 +1225,19 @@ extension ConcatenationFlowSuite {
                 ).write()
 
                 try Expect.equal(
-                    added.document.statistics.cache.metadataHits,
+                    added.documentStatistics.cache.metadataHits,
                     2,
                     "cache.source-addition-existing-hits"
                 )
 
                 try Expect.equal(
-                    added.document.statistics.cache.sourceReads,
+                    added.documentStatistics.cache.sourceReads,
                     1,
                     "cache.source-addition-one-read"
                 )
 
                 try Expect.equal(
-                    added.document.statistics.cache.rebuilds,
+                    added.documentStatistics.cache.rebuilds,
                     1,
                     "cache.source-addition-one-rebuild"
                 )
@@ -1255,19 +1255,19 @@ extension ConcatenationFlowSuite {
                 ).write()
 
                 try Expect.equal(
-                    removed.document.statistics.cache.metadataHits,
+                    removed.documentStatistics.cache.metadataHits,
                     2,
                     "cache.source-removal-retained-hits"
                 )
 
                 try Expect.equal(
-                    removed.document.statistics.cache.sourceReads,
+                    removed.documentStatistics.cache.sourceReads,
                     0,
                     "cache.source-removal-zero-reads"
                 )
 
                 try Expect.equal(
-                    removed.document.statistics.cache.rebuilds,
+                    removed.documentStatistics.cache.rebuilds,
                     0,
                     "cache.source-removal-zero-rebuilds"
                 )
@@ -1371,25 +1371,30 @@ extension ConcatenationFlowSuite {
                 ).write()
 
                 try Expect.equal(
-                    reordered.document.statistics.cache.metadataHits,
+                    reordered.documentStatistics.cache.metadataHits,
                     3,
                     "cache.reorder-all-section-hits"
                 )
 
                 try Expect.equal(
-                    reordered.document.statistics.cache.sourceReads,
+                    reordered.documentStatistics.cache.sourceReads,
                     0,
                     "cache.reorder-zero-source-reads"
                 )
 
                 try Expect.equal(
-                    reordered.document.statistics.cache.rebuilds,
+                    reordered.documentStatistics.cache.rebuilds,
                     0,
                     "cache.reorder-zero-rebuilds"
                 )
 
+                let reorderedDocument = try Expect.notNil(
+                    reordered.document,
+                    "cache.reorder-materialized-document"
+                )
+
                 try Expect.equal(
-                    reordered.document.sections.map {
+                    reorderedDocument.sections.map {
                         $0.file.lastPathComponent
                     },
                     [
@@ -1820,21 +1825,21 @@ extension ConcatenationFlowSuite {
                 )
 
                 try Expect.equal(
-                    cold.document.statistics.cache
+                    cold.documentStatistics.cache
                         .metadataInspections,
                     sources.count,
                     "cache.async-write-cold-inspections"
                 )
 
                 try Expect.equal(
-                    cold.document.statistics.cache
+                    cold.documentStatistics.cache
                         .sourceReads,
                     sources.count,
                     "cache.async-write-cold-source-reads"
                 )
 
                 try Expect.equal(
-                    cold.document.statistics.cache
+                    cold.documentStatistics.cache
                         .rebuilds,
                     sources.count,
                     "cache.async-write-cold-rebuilds"
@@ -1844,32 +1849,33 @@ extension ConcatenationFlowSuite {
                     concurrency: .automatic
                 )
 
-                try Expect.equal(
-                    warm.document.sections.map {
-                        $0.file.lastPathComponent
-                    },
-                    sources.map(
-                        \.lastPathComponent
-                    ),
-                    "cache.async-write-warm-order"
+                try Expect.true(
+                    warm.document == nil,
+                    "cache.async-write-warm-skips-materialization"
                 )
 
                 try Expect.equal(
-                    warm.document.statistics.cache
+                    warm.documentStatistics.renderedSectionCount,
+                    sources.count,
+                    "cache.async-write-warm-section-count"
+                )
+
+                try Expect.equal(
+                    warm.documentStatistics.cache
                         .metadataHits,
                     sources.count,
                     "cache.async-write-warm-metadata-hits"
                 )
 
                 try Expect.equal(
-                    warm.document.statistics.cache
+                    warm.documentStatistics.cache
                         .sourceReads,
                     0,
                     "cache.async-write-warm-zero-source-reads"
                 )
 
                 try Expect.equal(
-                    warm.document.statistics.cache
+                    warm.documentStatistics.cache
                         .rebuilds,
                     0,
                     "cache.async-write-warm-zero-rebuilds"

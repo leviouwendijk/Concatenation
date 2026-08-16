@@ -865,19 +865,19 @@ private func expectRendererOnlyInvalidation(
     label: String
 ) throws {
     try Expect.equal(
-        result.document.statistics.cache.metadataHits,
+        result.documentStatistics.cache.metadataHits,
         sourceCount,
         "cache-stress.renderer-\(label)-metadata-hits"
     )
 
     try Expect.equal(
-        result.document.statistics.cache.sourceReads,
+        result.documentStatistics.cache.sourceReads,
         0,
         "cache-stress.renderer-\(label)-zero-reads"
     )
 
     try Expect.equal(
-        result.document.statistics.cache.rebuilds,
+        result.documentStatistics.cache.rebuilds,
         0,
         "cache-stress.renderer-\(label)-zero-rebuilds"
     )

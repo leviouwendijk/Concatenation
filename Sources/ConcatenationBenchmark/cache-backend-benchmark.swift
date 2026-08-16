@@ -17,6 +17,7 @@ internal enum CacheBackendBenchmark {
             "cache_load_ms",
             "inspect_ms",
             "safeguard_ms",
+            "reuse_check_ms",
             "section_load_ms",
             "preread_ms",
             "assemble_ms",
@@ -614,9 +615,7 @@ internal enum CacheBackendBenchmark {
         name: String
     ) throws {
         let cache =
-            sample.document
-                .statistics
-                .cache
+            sample.cache
 
         let safeguards =
             fixture.deepInspection
@@ -670,9 +669,7 @@ internal enum CacheBackendBenchmark {
         name: String
     ) throws {
         let cache =
-            sample.document
-                .statistics
-                .cache
+            sample.cache
 
         let safeguards =
             fixture.deepInspection
@@ -728,9 +725,7 @@ internal enum CacheBackendBenchmark {
         written: Bool
     ) throws {
         let cache =
-            sample.document
-                .statistics
-                .cache
+            sample.cache
 
         let safeguardReads =
             fixture.deepInspection
@@ -935,7 +930,8 @@ private extension BenchmarkFixture {
 
 private struct Sample {
     let milliseconds: Double
-    let document: ConcatenationDocument
+    let document: ConcatenationDocument?
+    let cache: ConcatenationStatistics.Cache
     let statistics: ConcatenationWriteStatistics
     let performedRender: Bool
     let performedWrite: Bool
@@ -943,7 +939,8 @@ private struct Sample {
 
     init(
         milliseconds: Double,
-        document: ConcatenationDocument,
+        document: ConcatenationDocument?,
+        cache: ConcatenationStatistics.Cache,
         statistics: ConcatenationWriteStatistics,
         performedRender: Bool,
         performedWrite: Bool,
@@ -951,6 +948,7 @@ private struct Sample {
     ) {
         self.milliseconds = milliseconds
         self.document = document
+        self.cache = cache
         self.statistics = statistics
         self.performedRender = performedRender
         self.performedWrite = performedWrite
@@ -1010,10 +1008,7 @@ private struct Measurement {
             samples.last
 
         let cache =
-            last?
-                .document
-                .statistics
-                .cache
+            last?.cache
             ?? .init()
 
         let renderBytes =
@@ -1067,6 +1062,12 @@ private struct Measurement {
                 median {
                     $0.preparation
                         .safeguardDuration
+                }
+            ),
+            format(
+                median {
+                    $0.preparation
+                        .reuseValidationDuration
                 }
             ),
             format(
@@ -1172,6 +1173,8 @@ private func measureWrite(
             milliseconds,
         document:
             result.document,
+        cache:
+            result.documentStatistics.cache,
         statistics:
             result.statistics,
         performedRender:
@@ -1203,6 +1206,8 @@ private func measureRender(
             milliseconds,
         document:
             result.document,
+        cache:
+            result.document.statistics.cache,
         statistics:
             .init(),
         performedRender:
@@ -1263,6 +1268,8 @@ private func measurePreparedRender(
             milliseconds,
         document:
             document,
+        cache:
+            document.statistics.cache,
         statistics:
             .init(
                 renderDuration:
@@ -1293,6 +1300,8 @@ private func measureDocument(
             milliseconds,
         document:
             document,
+        cache:
+            document.statistics.cache,
         statistics:
             .init(),
         performedRender:

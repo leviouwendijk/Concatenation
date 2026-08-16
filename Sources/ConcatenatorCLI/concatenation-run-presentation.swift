@@ -664,6 +664,12 @@ func printConAnyRunSummary(
                     )
                 ),
                 .field(
+                    label: "reuse check",
+                    value: formattedDuration(
+                        preparation.reuseValidationDuration
+                    )
+                ),
+                .field(
                     label: "section load",
                     value: formattedDuration(
                         preparation.sectionPreloadDuration

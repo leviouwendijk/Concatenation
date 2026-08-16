@@ -374,7 +374,7 @@ public struct ConAnyWriteBatchResult {
         outputs.reduce(
             0
         ) {
-            $0 + $1.result.document.statistics.sourceCount
+            $0 + $1.result.documentStatistics.sourceCount
         }
     }
 
@@ -396,7 +396,7 @@ public struct ConAnyWriteBatchResult {
 
     public var warnings: [ConcatenationWarning] {
         outputs.flatMap {
-            $0.result.document.warnings
+            $0.result.warnings
         }
     }
 
@@ -404,7 +404,7 @@ public struct ConAnyWriteBatchResult {
         outputs.reduce(
             .init()
         ) { aggregate, output in
-            let next = output.result.document.statistics.cache
+            let next = output.result.documentStatistics.cache
 
             return .init(
                 metadataInspections:

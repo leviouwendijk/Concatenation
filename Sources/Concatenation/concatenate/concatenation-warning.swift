@@ -1,11 +1,11 @@
 import Foundation
 
-public enum ConcatenationWarningKind: String, Sendable {
+public enum ConcatenationWarningKind: String, Sendable, Codable {
     case blockedByPolicy
     case truncated
 }
 
-public struct ConcatenationWarning: Sendable {
+public struct ConcatenationWarning: Sendable, Codable, Equatable {
     public let kind: ConcatenationWarningKind
     public let file: URL
     public let message: String
