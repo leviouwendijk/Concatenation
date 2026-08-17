@@ -161,11 +161,6 @@ func printConAnyRunSummary(
         for: .standardOutput
     ).columns
 
-    let styledState =
-        isTerminal
-            ? stateStyle.apply(state)
-            : state
-
     var sections: [TerminalDetailSection] = [
         .init(
             title: "Resolution",
@@ -650,143 +645,13 @@ func printConAnyRunSummary(
     let outputWork =
         result.outputStatistics
 
-    var outputItems: [TerminalDetailItem] = [
-        .field(
-            label: "prepare",
-            value: formattedDuration(
-                outputWork.preparation.duration
-            )
-        ),
-        .field(
-            label: "fingerprint",
-            value: formattedDuration(
-                outputWork.artifactFingerprintDuration
-            )
-        ),
-        .field(
-            label: "artifact check",
-            value: formattedDuration(
-                outputWork.artifactValidationDuration
-            )
-        ),
-        .field(
-            label: "render",
-            value: formattedDuration(
-                outputWork.renderDuration
-            )
-        ),
-        .field(
-            label: "write",
-            value: formattedDuration(
-                outputWork.outputWriteDuration
-            )
-        ),
-        .field(
-            label: "artifact record",
-            value: formattedDuration(
-                outputWork.artifactCreationDuration
-            )
-        ),
-        .field(
-            label: "cache persist",
-            value: formattedDuration(
-                outputWork.cachePersistenceDuration
-            )
-        ),
-    ]
-
-    if outputWork.clipboardDuration > 0
-        || verbose
-    {
-        outputItems.append(
-            .field(
-                label: "clipboard",
-                value: formattedDuration(
-                    outputWork.clipboardDuration
-                )
-            )
-        )
-    }
-
-    outputItems.append(
-        .field(
-            label: "other",
-            value: formattedDuration(
-                outputWork.otherDuration
-            )
-        )
-    )
-
     sections.append(
-        .init(
-            title: "Output pipeline",
-            items: outputItems
-        )
-    )
-
-    let preparation =
-        outputWork.preparation
-
-    sections.append(
-        .init(
-            title: "Preparation",
-            items: [
-                .field(
-                    label: "total",
-                    value: formattedDuration(
-                        preparation.duration
-                    )
-                ),
-                .field(
-                    label: "manifest",
-                    value: formattedDuration(
-                        preparation.cacheLoadDuration
-                    )
-                ),
-                .field(
-                    label: "inspect",
-                    value: formattedDuration(
-                        preparation.sourceInspectionDuration
-                    )
-                ),
-                .field(
-                    label: "safeguard",
-                    value: formattedDuration(
-                        preparation.safeguardDuration
-                    )
-                ),
-                .field(
-                    label: "reuse check",
-                    value: formattedDuration(
-                        preparation.reuseValidationDuration
-                    )
-                ),
-                .field(
-                    label: "section load",
-                    value: formattedDuration(
-                        preparation.sectionPreloadDuration
-                    )
-                ),
-                .field(
-                    label: "preread",
-                    value: formattedDuration(
-                        preparation.sourcePrereadDuration
-                    )
-                ),
-                .field(
-                    label: "assemble",
-                    value: formattedDuration(
-                        preparation.assemblyDuration
-                    )
-                ),
-                .field(
-                    label: "other",
-                    value: formattedDuration(
-                        preparation.otherDuration
-                    )
-                ),
-            ]
-        )
+        contentsOf:
+            concatenationOutputSections(
+                outputWork,
+                verbose: verbose,
+                includesCacheDetails: true
+            )
     )
 
     for section in sections {
@@ -947,6 +812,421 @@ func printConAnyRunSummary(
 
     print()
 
+    printConcatenationCompletion(
+        state: state,
+        stateStyle: stateStyle,
+        elapsed: elapsed,
+        details: [
+            "\(formattedCount(result.outputCount)) \(outputWord)",
+            "\(formattedCount(result.fileCount)) \(fileWord)",
+            "\(formattedCount(result.totalLineCount)) lines",
+        ],
+        identity: identity,
+        completedAt: completedAt,
+        isTerminal: isTerminal
+    )
+}
+
+func printConcatenationWarnings(
+    _ warnings: [ConcatenationWarning]
+) {
+    let blocked =
+        warnings.filter {
+            $0.kind == .blockedByPolicy
+        }
+
+    if !blocked.isEmpty {
+        for warning in blocked {
+            print(
+                "Excluding protected file:"
+            )
+
+            print(
+                "    file:     \(warning.file.path)"
+            )
+
+            print(
+                "    reason:   \(warning.message)"
+            )
+
+            print()
+        }
+
+        print(
+            "    Use --allow-secrets to override"
+        )
+
+        print()
+    }
+
+    for warning in warnings
+        where warning.kind == .truncated
+    {
+        print(
+            warning.message.ansi(
+                .yellow
+            )
+        )
+    }
+}
+
+func printConcatenationRunSummary(
+    _ result: ConcatenationWriteResult,
+    outputURL: URL,
+    identity: ConcatenationRunIdentity,
+    completedAt: Date = Date(),
+    verbose: Bool
+) {
+    let isTerminal =
+        isatty(
+            STDOUT_FILENO
+        ) == 1
+
+    if verbose {
+        let theme: TerminalTheme =
+            isTerminal
+                ? TerminalTheme(
+                    heading: .bold,
+                    label:
+                        .init(
+                            .brightBlack
+                        ),
+                    value: .none,
+                    caption:
+                        .init(
+                            .brightBlack
+                        )
+                )
+                : .plain
+
+        let layout =
+            TerminalBlockLayout(
+                fieldIndent: 2,
+                labelWidth:
+                    .minimum(
+                        16
+                    ),
+                labelValueSpacing: 2,
+                blankLinesAfter: 0
+            )
+
+        let width =
+            Terminal.size(
+                for:
+                    .standardOutput
+            ).columns
+
+        for section
+            in concatenationOutputSections(
+                result.statistics,
+                verbose: verbose,
+                includesCacheDetails: false
+            )
+        {
+            print(
+                section.render(
+                    width: width,
+                    theme: theme,
+                    layout: layout
+                ),
+                terminator: ""
+            )
+        }
+
+        print()
+    }
+
+    let elapsed = max(
+        0,
+        completedAt.timeIntervalSince(
+            identity.startedAt
+        )
+    )
+
+    let sourceCount =
+        result
+        .documentStatistics
+        .sourceCount
+
+    let fileWord =
+        sourceCount == 1
+            ? "file"
+            : "files"
+
+    printConcatenationCompletion(
+        state: "Concatenated",
+        stateStyle:
+            .init(
+                .green,
+                .bold
+            ),
+        elapsed: elapsed,
+        details: [
+            "\(formattedCount(sourceCount)) \(fileWord)",
+            "\(formattedCount(result.renderedLineCount)) lines",
+        ],
+        identity: identity,
+        completedAt: completedAt,
+        isTerminal: isTerminal
+    )
+
+    let outputLine =
+        "  output  \(outputURL.path)"
+
+    print(
+        isTerminal
+            ? TerminalStyle(
+                .brightBlack
+            ).apply(
+                outputLine
+            )
+            : outputLine
+    )
+}
+
+private func concatenationOutputSections(
+    _ outputWork:
+        ConcatenationWriteStatistics,
+    verbose: Bool,
+    includesCacheDetails: Bool
+) -> [TerminalDetailSection] {
+    var outputItems:
+        [TerminalDetailItem] = [
+            .field(
+                label: "prepare",
+                value:
+                    formattedDuration(
+                        outputWork
+                            .preparation
+                            .duration
+                    )
+            ),
+        ]
+
+    if includesCacheDetails {
+        outputItems.append(
+            .field(
+                label: "fingerprint",
+                value:
+                    formattedDuration(
+                        outputWork
+                            .artifactFingerprintDuration
+                    )
+            )
+        )
+
+        outputItems.append(
+            .field(
+                label: "artifact check",
+                value:
+                    formattedDuration(
+                        outputWork
+                            .artifactValidationDuration
+                    )
+            )
+        )
+    }
+
+    outputItems.append(
+        .field(
+            label: "render",
+            value:
+                formattedDuration(
+                    outputWork
+                        .renderDuration
+                )
+        )
+    )
+
+    outputItems.append(
+        .field(
+            label: "write",
+            value:
+                formattedDuration(
+                    outputWork
+                        .outputWriteDuration
+                )
+        )
+    )
+
+    if includesCacheDetails {
+        outputItems.append(
+            .field(
+                label: "artifact record",
+                value:
+                    formattedDuration(
+                        outputWork
+                            .artifactCreationDuration
+                    )
+            )
+        )
+
+        outputItems.append(
+            .field(
+                label: "cache persist",
+                value:
+                    formattedDuration(
+                        outputWork
+                            .cachePersistenceDuration
+                    )
+            )
+        )
+    }
+
+    if outputWork.clipboardDuration > 0
+        || verbose
+    {
+        outputItems.append(
+            .field(
+                label: "clipboard",
+                value:
+                    formattedDuration(
+                        outputWork
+                            .clipboardDuration
+                    )
+            )
+        )
+    }
+
+    outputItems.append(
+        .field(
+            label: "other",
+            value:
+                formattedDuration(
+                    outputWork
+                        .otherDuration
+                )
+        )
+    )
+
+    let preparation =
+        outputWork.preparation
+
+    var preparationItems:
+        [TerminalDetailItem] = [
+            .field(
+                label: "total",
+                value:
+                    formattedDuration(
+                        preparation
+                            .duration
+                    )
+            ),
+        ]
+
+    if includesCacheDetails {
+        preparationItems.append(
+            .field(
+                label: "manifest",
+                value:
+                    formattedDuration(
+                        preparation
+                            .cacheLoadDuration
+                    )
+            )
+        )
+    }
+
+    preparationItems.append(
+        .field(
+            label: "inspect",
+            value:
+                formattedDuration(
+                    preparation
+                        .sourceInspectionDuration
+                )
+        )
+    )
+
+    preparationItems.append(
+        .field(
+            label: "safeguard",
+            value:
+                formattedDuration(
+                    preparation
+                        .safeguardDuration
+                )
+        )
+    )
+
+    if includesCacheDetails {
+        preparationItems.append(
+            .field(
+                label: "reuse check",
+                value:
+                    formattedDuration(
+                        preparation
+                            .reuseValidationDuration
+                    )
+            )
+        )
+
+        preparationItems.append(
+            .field(
+                label: "section load",
+                value:
+                    formattedDuration(
+                        preparation
+                            .sectionPreloadDuration
+                    )
+            )
+        )
+    }
+
+    preparationItems.append(
+        .field(
+            label: "preread",
+            value:
+                formattedDuration(
+                    preparation
+                        .sourcePrereadDuration
+                )
+        )
+    )
+
+    preparationItems.append(
+        .field(
+            label: "assemble",
+            value:
+                formattedDuration(
+                    preparation
+                        .assemblyDuration
+                )
+        )
+    )
+
+    preparationItems.append(
+        .field(
+            label: "other",
+            value:
+                formattedDuration(
+                    preparation
+                        .otherDuration
+                )
+        )
+    )
+
+    return [
+        .init(
+            title: "Output pipeline",
+            items: outputItems
+        ),
+        .init(
+            title: "Preparation",
+            items: preparationItems
+        ),
+    ]
+}
+
+private func printConcatenationCompletion(
+    state: String,
+    stateStyle: TerminalStyle,
+    elapsed: TimeInterval,
+    details: [String],
+    identity: ConcatenationRunIdentity,
+    completedAt: Date,
+    isTerminal: Bool
+) {
     let timestamp =
         formattedTimestamp(
             completedAt
@@ -975,6 +1255,21 @@ func printConAnyRunSummary(
             + " · \(identity.tagged)"
     }
 
+    let styledState =
+        isTerminal
+            ? stateStyle.apply(
+                state
+            )
+            : state
+
+    let detailSuffix =
+        details.isEmpty
+            ? ""
+            : " · "
+                + details.joined(
+                    separator: " · "
+                )
+
     print(
         completionLine
     )
@@ -983,9 +1278,7 @@ func printConAnyRunSummary(
         "✓ "
             + styledState
             + " · \(formattedDuration(elapsed))"
-            + " · \(formattedCount(result.outputCount)) \(outputWord)"
-            + " · \(formattedCount(result.fileCount)) \(fileWord)"
-            + " · \(formattedCount(result.totalLineCount)) lines"
+            + detailSuffix
     )
 }
 

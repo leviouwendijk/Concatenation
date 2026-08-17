@@ -164,7 +164,7 @@ enum ConcatAnyRunCommand: RunnableArgumentCommand {
             )
         }
 
-        printConAnyWarnings(
+        printConcatenationWarnings(
             result.warnings
         )
 

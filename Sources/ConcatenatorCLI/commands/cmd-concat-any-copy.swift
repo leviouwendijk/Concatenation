@@ -110,7 +110,7 @@ enum ConcatAnyCopyCommand:
             }
         }
 
-        printConAnyWarnings(
+        printConcatenationWarnings(
             result.warnings
         )
 
@@ -128,38 +128,6 @@ enum ConcatAnyCopyCommand:
                         : "files"
                 )
                 + " to clipboard."
-        )
-    }
-}
-
-func printConAnyWarnings(
-    _ warnings: [ConcatenationWarning]
-) {
-    for warning in warnings {
-        switch warning.kind {
-        case .blockedByPolicy:
-            print(
-                "Excluded protected file: \(warning.file.path)"
-            )
-
-            print(
-                "  \(warning.message)"
-            )
-
-        case .truncated:
-            print(
-                warning.message
-            )
-        }
-    }
-
-    if warnings.contains(
-        where: {
-            $0.kind == .blockedByPolicy
-        }
-    ) {
-        print(
-            "Use --allow-secrets to override"
         )
     }
 }
