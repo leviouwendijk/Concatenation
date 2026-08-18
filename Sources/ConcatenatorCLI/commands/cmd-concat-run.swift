@@ -11,15 +11,29 @@ enum ConcatRunCommand: RunnableArgumentCommand {
     ]
 
     static func components() throws -> [CommandComponentLowerable] {
-        ConcatOptions.components()
+        [
+            flag(
+                "verbose",
+                help: "Show detailed execution output."
+            ),
+        ] + ConcatOptions.components()
     }
 
     static func run(
         _ invocation: ParsedInvocation
     ) async throws {
-        let options = try ConcatOptions.parse(
+        var options = try ConcatOptions.parse(
             invocation
         )
+
+        let verbose =
+            try invocation.flag(
+                "verbose"
+            )
+
+        options.verboseOutput =
+            options.verboseOutput
+            || verbose
 
         try await runDefaultConcatenation(
             options: options
@@ -136,8 +150,7 @@ func runDefaultConcatenation(
                     finalMap.obscureValues,
                 copyToClipboard:
                     options.copyToClipboard,
-                verbose:
-                    options.verboseOutput,
+                verbose: false,
                 reportWarnings: false,
                 allowSecrets:
                     options.allowSecrets,
