@@ -12,6 +12,8 @@ enum ConCommand: ArgumentCommand {
             ConcatCommand.self,
             TreeCommand.self,
             IgnoreCommand.self,
+            CorpusCommand.self,
+            ServiceCommand.self,
         ]
     }
 

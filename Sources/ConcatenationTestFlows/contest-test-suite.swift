@@ -9,5 +9,10 @@ enum ConcatenationFlowSuite: TestFlowRegistry {
         conAnyExecutionFlow,
         conCacheFlow,
         conCacheStressFlow,
+        conSourceSnapshotFlow,
+        conCorpusFlow,
+        conCorpusServiceFlow,
+        conServiceTransportFlow,
+        conServiceCorpusRPCFlow,
     ]
 }

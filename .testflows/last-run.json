@@ -3,12 +3,12 @@
   "failed_names" : [
 
   ],
-  "generated_at" : "2026-08-16T07:07:11Z",
-  "passed" : 5,
+  "generated_at" : "2026-08-28T16:43:14Z",
+  "passed" : 10,
   "results" : [
     {
       "display_name" : "con-legacy-migration",
-      "duration_seconds" : 0.0034819841384887695,
+      "duration_seconds" : 0.0020700693130493164,
       "name" : "con-legacy-migration",
       "status" : "passed",
       "tags" : [
@@ -20,7 +20,7 @@
     },
     {
       "display_name" : "con-any-nesting",
-      "duration_seconds" : 0.02033698558807373,
+      "duration_seconds" : 0.02460002899169922,
       "name" : "con-any-nesting",
       "status" : "passed",
       "tags" : [
@@ -32,7 +32,7 @@
     },
     {
       "display_name" : "con-any-execution",
-      "duration_seconds" : 0.03709399700164795,
+      "duration_seconds" : 0.03811490535736084,
       "name" : "con-any-execution",
       "status" : "passed",
       "tags" : [
@@ -45,7 +45,7 @@
     },
     {
       "display_name" : "con-cache",
-      "duration_seconds" : 0.32872092723846436,
+      "duration_seconds" : 0.29963791370391846,
       "name" : "con-cache",
       "status" : "passed",
       "tags" : [
@@ -56,7 +56,7 @@
     },
     {
       "display_name" : "con-cache-stress",
-      "duration_seconds" : 1.3217869997024536,
+      "duration_seconds" : 1.0562549829483032,
       "name" : "con-cache-stress",
       "status" : "passed",
       "tags" : [
@@ -65,9 +65,70 @@
         "incremental",
         "stress"
       ]
+    },
+    {
+      "display_name" : "con-source-snapshot",
+      "duration_seconds" : 0.0008369684219360352,
+      "name" : "con-source-snapshot",
+      "status" : "passed",
+      "tags" : [
+        "cache",
+        "delta",
+        "incremental",
+        "snapshot"
+      ]
+    },
+    {
+      "display_name" : "con-corpus",
+      "duration_seconds" : 0.009279966354370117,
+      "name" : "con-corpus",
+      "status" : "passed",
+      "tags" : [
+        "cache",
+        "corpus",
+        "delta",
+        "incremental"
+      ]
+    },
+    {
+      "display_name" : "con-corpus-service",
+      "duration_seconds" : 0.006801009178161621,
+      "name" : "con-corpus-service",
+      "status" : "passed",
+      "tags" : [
+        "cache",
+        "corpus",
+        "service",
+        "session"
+      ]
+    },
+    {
+      "display_name" : "con-service-transport",
+      "duration_seconds" : 0.11947000026702881,
+      "name" : "con-service-transport",
+      "status" : "passed",
+      "tags" : [
+        "corpus",
+        "ipc",
+        "service",
+        "transport"
+      ]
+    },
+    {
+      "display_name" : "con-service-corpus-rpc",
+      "duration_seconds" : 0.13640999794006348,
+      "name" : "con-service-corpus-rpc",
+      "status" : "passed",
+      "tags" : [
+        "corpus",
+        "incremental",
+        "ipc",
+        "service",
+        "transport"
+      ]
     }
   ],
   "skipped" : 0,
   "title" : "Concatenation flow tests",
-  "total" : 5
+  "total" : 10
 }

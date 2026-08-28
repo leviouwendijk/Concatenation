@@ -66,10 +66,17 @@ let package = Package(
             //     .process("Resources")
             // ],
         ),
+        .target(
+            name: "ConcatenationServiceTransport",
+            dependencies: [
+                .target(name: "Concatenation"),
+            ]
+        ),
         .executableTarget(
             name: "con",
             dependencies: [
                 .target(name: "Concatenation"),
+                .target(name: "ConcatenationServiceTransport"),
                 .product(name: "Arguments", package: "Arguments"),
                 .product(name: "IO", package: "IO"),
                 .product(name: "Terminal", package: "Terminal")
@@ -80,6 +87,7 @@ let package = Package(
             name: "ConcatenationTestFlows",
             dependencies: [
                 .target(name: "Concatenation"),
+                .target(name: "ConcatenationServiceTransport"),
                 .product(name: "IO", package: "IO"),
                 .product(name: "Readers", package: "Readers"),
                 .product(name: "Writers", package: "Writers"),
