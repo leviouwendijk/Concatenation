@@ -88,6 +88,10 @@ let package = Package(
             dependencies: [
                 .target(name: "Concatenation"),
                 .target(name: "ConcatenationServiceTransport"),
+                .product(name: "Position", package: "Position"),
+                .product(name: "Path", package: "Path"),
+                .product(name: "PathParsing", package: "Path"),
+                .product(name: "Selection", package: "Selection"),
                 .product(name: "IO", package: "IO"),
                 .product(name: "Readers", package: "Readers"),
                 .product(name: "Writers", package: "Writers"),

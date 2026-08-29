@@ -12,6 +12,7 @@ enum ConcatenationFlowSuite: TestFlowRegistry {
         conSourceSnapshotFlow,
         conCorpusFlow,
         conCorpusServiceFlow,
+        conCorpusDefinitionFlow,
         conServiceTransportFlow,
         conServiceCorpusRPCFlow,
     ]

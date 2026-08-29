@@ -53,4 +53,7 @@ public enum ConcatenationCorpusServiceError:
     case unknownCorpus(
         ConcatenationCorpusIdentifier
     )
+    case definitionUnavailable(
+        ConcatenationCorpusIdentifier
+    )
 }
