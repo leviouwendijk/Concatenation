@@ -21,6 +21,29 @@ public struct ConcatenationCorpusRefresh: Sendable {
     }
 }
 
+public struct ConcatenationCorpusReconciliation: Sendable {
+    public let previousSnapshot: ConcatenationSourceSnapshot?
+    public let snapshot: ConcatenationSourceSnapshot
+    public let delta: ConcatenationSourceDelta?
+    public let statistics: ConcatenationStatistics.Cache
+
+    public init(
+        previousSnapshot: ConcatenationSourceSnapshot?,
+        snapshot: ConcatenationSourceSnapshot,
+        delta: ConcatenationSourceDelta?,
+        statistics: ConcatenationStatistics.Cache
+    ) {
+        self.previousSnapshot = previousSnapshot
+        self.snapshot = snapshot
+        self.delta = delta
+        self.statistics = statistics
+    }
+
+    public var isInitial: Bool {
+        previousSnapshot == nil
+    }
+}
+
 public struct ConcatenationCorpusSource:
     Sendable,
     Codable

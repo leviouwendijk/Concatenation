@@ -6,6 +6,7 @@ public struct ConcatenationStatistics: Sendable {
         public let sourceReads: Int
         public let metadataHits: Int
         public let contentHits: Int
+        public let sectionLoads: Int
         public let rebuilds: Int
 
         public init(
@@ -15,6 +16,7 @@ public struct ConcatenationStatistics: Sendable {
             sourceReads: Int = 0,
             metadataHits: Int = 0,
             contentHits: Int = 0,
+            sectionLoads: Int = 0,
             rebuilds: Int = 0
         ) {
             self.metadataInspections = metadataInspections
@@ -23,6 +25,7 @@ public struct ConcatenationStatistics: Sendable {
             self.sourceReads = sourceReads
             self.metadataHits = metadataHits
             self.contentHits = contentHits
+            self.sectionLoads = sectionLoads
             self.rebuilds = rebuilds
         }
     }

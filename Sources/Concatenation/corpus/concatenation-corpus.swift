@@ -54,6 +54,31 @@ public struct ConcatenationCorpus: Sendable {
         try cache.sourceSnapshot()
     }
 
+    public func reconcile() throws
+        -> ConcatenationCorpusReconciliation
+    {
+        let previous = try snapshot()
+        let reconciliation = try concatenator()
+            .reconcileSourceCache()
+        guard let current = try snapshot() else {
+            throw ConcatenationCorpusError.missingSnapshot(
+                location
+            )
+        }
+        let delta = try previous.map {
+            try $0.delta(
+                to: current
+            )
+        }
+
+        return ConcatenationCorpusReconciliation(
+            previousSnapshot: previous,
+            snapshot: current,
+            delta: delta,
+            statistics: reconciliation.statistics
+        )
+    }
+
     public func refresh() throws
         -> ConcatenationCorpusRefresh
     {

@@ -496,6 +496,9 @@ public struct ConAnyWriteBatchResult {
                 contentHits:
                     aggregate.contentHits
                     + next.contentHits,
+                sectionLoads:
+                    aggregate.sectionLoads
+                    + next.sectionLoads,
                 rebuilds:
                     aggregate.rebuilds
                     + next.rebuilds

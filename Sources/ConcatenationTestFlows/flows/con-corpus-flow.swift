@@ -74,7 +74,7 @@ extension ConcatenationFlowSuite {
                 }
 
                 _ = try fixture.corpus.refresh()
-                let warm = try fixture.corpus.refresh()
+                let warm = try fixture.corpus.reconcile()
                 let delta = try Expect.notNil(
                     warm.delta,
                     "warm corpus delta"
@@ -90,14 +90,29 @@ extension ConcatenationFlowSuite {
                     "warm corpus keeps both sources unchanged"
                 )
                 try Expect.equal(
-                    warm.document.statistics.cache.sourceReads,
-                    0,
-                    "warm corpus refresh performs zero source reads"
+                    warm.statistics.metadataInspections,
+                    2,
+                    "warm corpus reconcile inspects both sources"
                 )
                 try Expect.equal(
-                    warm.document.statistics.cache.rebuilds,
+                    warm.statistics.metadataHits,
+                    2,
+                    "warm corpus reconcile reuses both retained source states"
+                )
+                try Expect.equal(
+                    warm.statistics.sourceReads,
                     0,
-                    "warm corpus refresh performs zero rebuilds"
+                    "warm corpus reconcile performs zero source reads"
+                )
+                try Expect.equal(
+                    warm.statistics.sectionLoads,
+                    0,
+                    "warm corpus reconcile performs zero section loads"
+                )
+                try Expect.equal(
+                    warm.statistics.rebuilds,
+                    0,
+                    "warm corpus reconcile performs zero rebuilds"
                 )
             }
 
@@ -122,7 +137,7 @@ extension ConcatenationFlowSuite {
                     encoding: .utf8
                 )
 
-                let changed = try fixture.corpus.refresh()
+                let changed = try fixture.corpus.reconcile()
                 let delta = try Expect.notNil(
                     changed.delta,
                     "changed corpus delta"
@@ -143,12 +158,17 @@ extension ConcatenationFlowSuite {
                     "corpus delta retains unchanged source"
                 )
                 try Expect.equal(
-                    changed.document.statistics.cache.sourceReads,
+                    changed.statistics.sourceReads,
                     1,
                     "one source change causes one source read"
                 )
                 try Expect.equal(
-                    changed.document.statistics.cache.rebuilds,
+                    changed.statistics.sectionLoads,
+                    0,
+                    "changed reconcile does not hydrate unchanged sections"
+                )
+                try Expect.equal(
+                    changed.statistics.rebuilds,
                     1,
                     "one source change causes one rebuild"
                 )
@@ -229,7 +249,7 @@ extension ConcatenationFlowSuite {
                     encoding: .utf8
                 )
 
-                let changed = try fixture.corpus.refresh()
+                let changed = try fixture.corpus.reconcile()
                 let staleDelta = try Expect.notNil(
                     changed.delta,
                     "stale candidate delta"
@@ -241,7 +261,7 @@ extension ConcatenationFlowSuite {
                     encoding: .utf8
                 )
 
-                _ = try fixture.corpus.refresh()
+                _ = try fixture.corpus.reconcile()
 
                 var rejected = false
 

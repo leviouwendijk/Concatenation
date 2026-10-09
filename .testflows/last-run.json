@@ -3,12 +3,12 @@
   "failed_names" : [
 
   ],
-  "generated_at" : "2026-08-28T23:36:52Z",
+  "generated_at" : "2026-10-07T11:48:28Z",
   "passed" : 11,
   "results" : [
     {
       "display_name" : "con-legacy-migration",
-      "duration_seconds" : 0.0032390356063842773,
+      "duration_seconds" : 0.005524039268493652,
       "name" : "con-legacy-migration",
       "status" : "passed",
       "tags" : [
@@ -20,7 +20,7 @@
     },
     {
       "display_name" : "con-any-nesting",
-      "duration_seconds" : 0.019362926483154297,
+      "duration_seconds" : 0.014803051948547363,
       "name" : "con-any-nesting",
       "status" : "passed",
       "tags" : [
@@ -32,7 +32,7 @@
     },
     {
       "display_name" : "con-any-execution",
-      "duration_seconds" : 0.05024302005767822,
+      "duration_seconds" : 0.04928100109100342,
       "name" : "con-any-execution",
       "status" : "passed",
       "tags" : [
@@ -45,7 +45,7 @@
     },
     {
       "display_name" : "con-cache",
-      "duration_seconds" : 0.29200994968414307,
+      "duration_seconds" : 0.23548603057861328,
       "name" : "con-cache",
       "status" : "passed",
       "tags" : [
@@ -56,7 +56,7 @@
     },
     {
       "display_name" : "con-cache-stress",
-      "duration_seconds" : 1.1877949237823486,
+      "duration_seconds" : 1.0032879114151,
       "name" : "con-cache-stress",
       "status" : "passed",
       "tags" : [
@@ -68,7 +68,7 @@
     },
     {
       "display_name" : "con-source-snapshot",
-      "duration_seconds" : 0.0010689496994018555,
+      "duration_seconds" : 0.0009889602661132812,
       "name" : "con-source-snapshot",
       "status" : "passed",
       "tags" : [
@@ -80,7 +80,7 @@
     },
     {
       "display_name" : "con-corpus",
-      "duration_seconds" : 0.008237957954406738,
+      "duration_seconds" : 0.009261012077331543,
       "name" : "con-corpus",
       "status" : "passed",
       "tags" : [
@@ -92,7 +92,7 @@
     },
     {
       "display_name" : "con-corpus-service",
-      "duration_seconds" : 0.007268071174621582,
+      "duration_seconds" : 0.006298065185546875,
       "name" : "con-corpus-service",
       "status" : "passed",
       "tags" : [
@@ -104,7 +104,7 @@
     },
     {
       "display_name" : "con-corpus-definition",
-      "duration_seconds" : 0.007442951202392578,
+      "duration_seconds" : 0.008685946464538574,
       "name" : "con-corpus-definition",
       "status" : "passed",
       "tags" : [
@@ -117,7 +117,7 @@
     },
     {
       "display_name" : "con-service-transport",
-      "duration_seconds" : 0.07418501377105713,
+      "duration_seconds" : 0.06421995162963867,
       "name" : "con-service-transport",
       "status" : "passed",
       "tags" : [
@@ -129,7 +129,7 @@
     },
     {
       "display_name" : "con-service-corpus-rpc",
-      "duration_seconds" : 0.1749429702758789,
+      "duration_seconds" : 0.05591905117034912,
       "name" : "con-service-corpus-rpc",
       "status" : "passed",
       "tags" : [

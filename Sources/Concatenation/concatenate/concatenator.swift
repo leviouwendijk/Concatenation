@@ -580,7 +580,8 @@ public struct FileConcatenator: SafelyConcatenatable {
         ] = [:],
         cachedManifest providedCachedManifest:
             ConcatenationCacheManifest? = nil,
-        persistCache: Bool = true
+        persistCache: Bool = true,
+        materializeSections: Bool = true
     ) throws -> ConcatenationPreparedDocument {
         let fileManager = FileManager.default
         let preinspected = initialPreinspections
@@ -652,6 +653,11 @@ public struct FileConcatenator: SafelyConcatenatable {
         var sourceReads = 0
         var metadataHits = 0
         var contentHits = 0
+        var sectionLoads =
+            materializeSections
+            && sectionsPreloaded
+            ? initialPreloadedSections.count
+            : 0
         var rebuilds = 0
         var sourceActivities:
             [ConcatenationSourceActivity] = []
@@ -828,9 +834,22 @@ public struct FileConcatenator: SafelyConcatenatable {
                 let exactCachedSection: ConcatenationSection?
 
                 if let previous,
-                   previous.metadata == metadata,
-                   previous.transformationFingerprint
-                        == transformationFingerprint {
+                   sourceStateMatches(
+                    previous,
+                    metadata: metadata,
+                    transformationFingerprint:
+                        transformationFingerprint
+                   ) {
+                    if !materializeSections {
+                        metadataHits += 1
+
+                        cachedSources.append(
+                            previous
+                        )
+
+                        continue
+                    }
+
                     if sectionsPreloaded {
                         exactCachedSection = preloadedSections.removeValue(
                             forKey: sourceIndex
@@ -838,7 +857,8 @@ public struct FileConcatenator: SafelyConcatenatable {
                     } else {
                         exactCachedSection = try loadCachedSection(
                             previous,
-                            from: cache
+                            from: cache,
+                            sectionLoads: &sectionLoads
                         )
                     }
                 } else {
@@ -878,12 +898,43 @@ public struct FileConcatenator: SafelyConcatenatable {
                             )
                     }
 
+                    if !materializeSections,
+                       let previous,
+                       sourceContentMatches(
+                        previous,
+                        contentFingerprint:
+                            contentFingerprint,
+                        transformationFingerprint:
+                            transformationFingerprint
+                       )
+                    {
+                        contentHits += 1
+
+                        cachedSources.append(
+                            .init(
+                                metadata: metadata,
+                                contentFingerprint:
+                                    contentFingerprint,
+                                transformationFingerprint:
+                                    transformationFingerprint
+                            )
+                        )
+
+                        continue
+                    }
+
                     if let previous,
-                       previous.contentFingerprint == contentFingerprint,
-                       previous.transformationFingerprint == transformationFingerprint,
+                       sourceContentMatches(
+                        previous,
+                        contentFingerprint:
+                            contentFingerprint,
+                        transformationFingerprint:
+                            transformationFingerprint
+                       ),
                        let reusedSection = try loadCachedSection(
                             previous,
-                            from: cache
+                            from: cache,
+                            sectionLoads: &sectionLoads
                        ) {
                         contentHits += 1
 
@@ -942,20 +993,22 @@ public struct FileConcatenator: SafelyConcatenatable {
                     }
                 }
 
-                if section.wasTruncated,
-                   let message = section.truncationMessage {
-                    warnings.append(
-                        .init(
-                            kind: .truncated,
-                            file: resolved,
-                            message: message
+                if materializeSections {
+                    if section.wasTruncated,
+                       let message = section.truncationMessage {
+                        warnings.append(
+                            .init(
+                                kind: .truncated,
+                                file: resolved,
+                                message: message
+                            )
                         )
+                    }
+
+                    sections.append(
+                        section
                     )
                 }
-
-                sections.append(
-                    section
-                )
 
                 cachedSources.append(
                     cachedSource
@@ -975,6 +1028,29 @@ public struct FileConcatenator: SafelyConcatenatable {
             throw MultiError(errors)
         }
 
+        let previousSourceMaterial =
+            try cachedManifest.map {
+                try sourceMaterialFingerprint(
+                    for: $0.sources
+                )
+            }
+
+        let currentSourceMaterial =
+            try sourceMaterialFingerprint(
+                for: cachedSources
+            )
+
+        let retainedArtifact:
+            ConcatenationCachedArtifact?
+
+        if let previousSourceMaterial,
+           previousSourceMaterial == currentSourceMaterial {
+            retainedArtifact =
+                cachedManifest?.artifact
+        } else {
+            retainedArtifact = nil
+        }
+
         let cacheStateChanged = !cacheStateMatches(
             cachedManifest,
             sources: cachedSources,
@@ -991,7 +1067,7 @@ public struct FileConcatenator: SafelyConcatenatable {
                     safeguards:
                         cachedSafeguards,
                     artifact:
-                        cachedManifest?.artifact
+                        retainedArtifact
                 )
             }
 
@@ -1026,13 +1102,13 @@ public struct FileConcatenator: SafelyConcatenatable {
                 sourceReads: sourceReads,
                 metadataHits: metadataHits,
                 contentHits: contentHits,
+                sectionLoads: sectionLoads,
                 rebuilds: rebuilds
             )
         )
 
-        let sourceMaterialFingerprint = try sourceMaterialFingerprint(
-            for: cachedSources
-        )
+        let documentSourceMaterialFingerprint =
+            currentSourceMaterial
 
         return ConcatenationPreparedDocument(
             document: ConcatenationDocument(
@@ -1040,7 +1116,8 @@ public struct FileConcatenator: SafelyConcatenatable {
                 sections: sections,
                 warnings: warnings,
                 statistics: statistics,
-                sourceMaterialFingerprint: sourceMaterialFingerprint
+                sourceMaterialFingerprint:
+                    documentSourceMaterialFingerprint
             ),
             cacheManifest: preparedCacheManifest,
             cacheStateChanged: cacheStateChanged,
@@ -1572,6 +1649,32 @@ public struct FileConcatenator: SafelyConcatenatable {
     }
 }
 
+struct ConcatenationSourceCacheReconciliation: Sendable {
+    let statistics: ConcatenationStatistics.Cache
+}
+
+extension FileConcatenator {
+    func reconcileSourceCache() throws
+        -> ConcatenationSourceCacheReconciliation
+    {
+        guard cache != nil else {
+            throw ConcatenationCacheInvariantError
+                .missingCacheBinding
+        }
+
+        let prepared = try prepareDocument(
+            preinspected: [:],
+            persistCache: true,
+            materializeSections: false
+        )
+
+        return ConcatenationSourceCacheReconciliation(
+            statistics:
+                prepared.document.statistics.cache
+        )
+    }
+}
+
 private struct ConcatenationPreparedDocument:
     Sendable
 {
@@ -1710,6 +1813,7 @@ private enum ConcatenationCacheInvariantError:
     Error,
     LocalizedError
 {
+    case missingCacheBinding
     case missingContentFingerprint(URL)
     case missingSourceMaterialFingerprint
     case missingArtifactContentFingerprint(URL)
@@ -1717,6 +1821,9 @@ private enum ConcatenationCacheInvariantError:
 
     var errorDescription: String? {
         switch self {
+        case .missingCacheBinding:
+            return "Concatenation source reconciliation requires a cache binding"
+
         case .missingContentFingerprint(let url):
             return "Missing content fingerprint after reading \(url.path)"
 
@@ -2229,9 +2336,12 @@ private extension FileConcatenator {
 
             guard expected.file.standardizedFileURL
                         == key,
-                  expected.metadata == metadata,
-                  expected.transformationFingerprint
-                        == transformationFingerprint
+                  sourceStateMatches(
+                    expected,
+                    metadata: metadata,
+                    transformationFingerprint:
+                        transformationFingerprint
+                  )
             else {
                 return nil
             }
@@ -2376,9 +2486,12 @@ private extension FileConcatenator {
                         transformationFingerprint,
                     from: &cachedSourcesByFile
                 ),
-                previous.metadata == metadata,
-                previous.transformationFingerprint
-                    == transformationFingerprint
+                sourceStateMatches(
+                    previous,
+                    metadata: metadata,
+                    transformationFingerprint:
+                        transformationFingerprint
+                )
             else {
                 continue
             }
@@ -2513,9 +2626,12 @@ private extension FileConcatenator {
             )
 
             if let previous,
-               previous.metadata == metadata,
-               previous.transformationFingerprint
-                    == transformationFingerprint,
+               sourceStateMatches(
+                previous,
+                metadata: metadata,
+                transformationFingerprint:
+                    transformationFingerprint
+               ),
                preloadedSections[
                     sourceIndex
                ] != nil {
@@ -2657,6 +2773,26 @@ private extension FileConcatenator {
         )
     }
 
+    func sourceStateMatches(
+        _ previous: ConcatenationCachedSource,
+        metadata: FileMetadataSnapshot,
+        transformationFingerprint: ContentFingerprint
+    ) -> Bool {
+        previous.metadata == metadata
+            && previous.transformationFingerprint
+                == transformationFingerprint
+    }
+
+    func sourceContentMatches(
+        _ previous: ConcatenationCachedSource,
+        contentFingerprint: ContentFingerprint,
+        transformationFingerprint: ContentFingerprint
+    ) -> Bool {
+        previous.contentFingerprint == contentFingerprint
+            && previous.transformationFingerprint
+                == transformationFingerprint
+    }
+
     func cacheStateMatches(
         _ manifest: ConcatenationCacheManifest?,
         sources: [ConcatenationCachedSource],
@@ -2733,12 +2869,19 @@ private extension FileConcatenator {
 
     func loadCachedSection(
         _ source: ConcatenationCachedSource,
-        from cache: ConcatenationCacheBinding?
+        from cache: ConcatenationCacheBinding?,
+        sectionLoads: inout Int
     ) throws -> ConcatenationSection? {
-        try cache?.loadSection(
+        let section = try cache?.loadSection(
             key:
                 source.sectionKey
         )
+
+        if section != nil {
+            sectionLoads += 1
+        }
+
+        return section
     }
 
     func saveCachedSection(
