@@ -28,6 +28,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/leviouwendijk/Primitives.git", branch: "master"),
+        .package(url: "https://github.com/leviouwendijk/Errors.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Strings.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Indentation.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Terminal.git", branch: "master"),
@@ -47,6 +48,7 @@ let package = Package(
             name: "Concatenation",
             dependencies: [
                 .product(name: "Primitives", package: "Primitives"),
+                .product(name: "Errors", package: "Errors"),
                 .product(name: "Strings", package: "Strings"),
                 .product(name: "Indentation", package: "Indentation"),
                 .product(name: "Terminal", package: "Terminal"),

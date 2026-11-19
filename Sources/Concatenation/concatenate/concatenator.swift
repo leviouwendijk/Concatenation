@@ -1,3 +1,4 @@
+import Errors
 import Foundation
 import IO
 import Terminal
@@ -1025,7 +1026,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         }
 
         if !errors.isEmpty {
-            throw MultiError(errors)
+            throw Errors(errors)
         }
 
         let previousSourceMaterial =
@@ -3719,7 +3720,7 @@ private extension FileConcatenator {
 //                 }
 //             }
 
-//             throw MultiError(errors)
+//             throw Errors(errors)
 //         }
 
 //         if copyToClipboard, let full = try? String(contentsOf: outputURL) {

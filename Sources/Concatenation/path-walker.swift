@@ -1,3 +1,4 @@
+import Errors
 import Foundation
 import Primitives
 
@@ -56,7 +57,7 @@ public struct PathWalker {
         }
         recurse(rootURL, depth: 0)
         if !errors.isEmpty { 
-            throw MultiError(errors) 
+            throw Errors(errors) 
         }
         return results
     }
