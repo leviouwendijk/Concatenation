@@ -17,10 +17,6 @@ let package = Package(
             name: "con",
             targets: ["con"]
         ),
-        .executable(
-            name: "conbench",
-            targets: ["ConcatenationBenchmark"]
-        ),
         .library(name: "ConcatenationServiceTransport", targets: ["ConcatenationServiceTransport"]),
     ],
     dependencies: [
@@ -80,13 +76,6 @@ let package = Package(
                 .product(name: "Terminal", package: "Terminal")
             ],
             path: "Sources/ConcatenatorCLI"
-        ),
-        .executableTarget(
-            name: "ConcatenationBenchmark",
-            dependencies: [
-                .target(name: "Concatenation"),
-                .product(name: "IO", package: "IO"),
-            ]
         ),
     ]
 )
