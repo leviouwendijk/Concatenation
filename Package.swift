@@ -18,13 +18,10 @@ let package = Package(
             targets: ["con"]
         ),
         .executable(
-            name: "contest",
-            targets: ["ConcatenationTestFlows"]
-        ),
-        .executable(
             name: "conbench",
             targets: ["ConcatenationBenchmark"]
         ),
+        .library(name: "ConcatenationServiceTransport", targets: ["ConcatenationServiceTransport"]),
     ],
     dependencies: [
         .package(url: "https://github.com/leviouwendijk/Primitives.git", branch: "master"),
@@ -41,7 +38,6 @@ let package = Package(
         .package(url: "https://github.com/leviouwendijk/Selection.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Partition.git", branch: "master"),
         .package(url: "https://github.com/leviouwendijk/Arguments.git", branch: "master"),
-        .package(url: "https://github.com/leviouwendijk/TestFlows.git", branch: "master"),
     ],
     targets: [
         .target(
@@ -84,21 +80,6 @@ let package = Package(
                 .product(name: "Terminal", package: "Terminal")
             ],
             path: "Sources/ConcatenatorCLI"
-        ),
-        .executableTarget(
-            name: "ConcatenationTestFlows",
-            dependencies: [
-                .target(name: "Concatenation"),
-                .target(name: "ConcatenationServiceTransport"),
-                .product(name: "Position", package: "Position"),
-                .product(name: "Path", package: "Path"),
-                .product(name: "PathParsing", package: "Path"),
-                .product(name: "Selection", package: "Selection"),
-                .product(name: "IO", package: "IO"),
-                .product(name: "Readers", package: "Readers"),
-                .product(name: "Writers", package: "Writers"),
-                .product(name: "TestFlows", package: "TestFlows"),
-            ]
         ),
         .executableTarget(
             name: "ConcatenationBenchmark",
