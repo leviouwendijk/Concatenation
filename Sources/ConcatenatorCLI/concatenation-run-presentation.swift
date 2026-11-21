@@ -874,6 +874,7 @@ func printConcatenationRunSummary(
     _ result: ConcatenationWriteResult,
     outputURL: URL,
     identity: ConcatenationRunIdentity,
+    clipboardDuration: TimeInterval = 0,
     completedAt: Date = Date(),
     verbose: Bool
 ) {
@@ -919,6 +920,7 @@ func printConcatenationRunSummary(
         for section
             in concatenationOutputSections(
                 result.statistics,
+                clipboardDuration: clipboardDuration,
                 verbose: verbose,
                 includesCacheDetails: false
             )
@@ -987,6 +989,7 @@ func printConcatenationRunSummary(
 private func concatenationOutputSections(
     _ outputWork:
         ConcatenationWriteStatistics,
+    clipboardDuration: TimeInterval = 0,
     verbose: Bool,
     includesCacheDetails: Bool
 ) -> [TerminalDetailSection] {
@@ -1073,7 +1076,7 @@ private func concatenationOutputSections(
         )
     }
 
-    if outputWork.clipboardDuration > 0
+    if clipboardDuration > 0
         || verbose
     {
         outputItems.append(
@@ -1081,8 +1084,7 @@ private func concatenationOutputSections(
                 label: "clipboard",
                 value:
                     formattedDuration(
-                        outputWork
-                            .clipboardDuration
+                        clipboardDuration
                     )
             )
         )

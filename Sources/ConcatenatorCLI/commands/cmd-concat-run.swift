@@ -1,4 +1,5 @@
 import Arguments
+import Clipboard
 import Concatenation
 import Foundation
 import IO
@@ -148,7 +149,7 @@ func runDefaultConcatenation(
                     options.includeSourceModifiedAt,
                 obscureMap:
                     finalMap.obscureValues,
-                copyToClipboard:
+                requiresRenderedText:
                     options.copyToClipboard,
                 verbose: false,
                 reportWarnings: false,
@@ -169,6 +170,18 @@ func runDefaultConcatenation(
 
     await status?.stop()
 
+    var clipboardDuration: TimeInterval = 0
+
+    if options.copyToClipboard,
+       let text = result.renderResult?.text
+    {
+        let clipboardStartedAt = Date()
+        text.clipboard()
+        clipboardDuration = Date().timeIntervalSince(
+            clipboardStartedAt
+        )
+    }
+
     printConcatenationWarnings(
         result.warnings
     )
@@ -177,6 +190,7 @@ func runDefaultConcatenation(
         result,
         outputURL: outputURL,
         identity: identity,
+        clipboardDuration: clipboardDuration,
         verbose:
             options.verboseOutput
     )

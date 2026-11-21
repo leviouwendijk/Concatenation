@@ -1,4 +1,5 @@
 import Arguments
+import Clipboard
 import Concatenation
 import Foundation
 import IO
@@ -173,9 +174,15 @@ enum ConcatCopyCommand:
             )
         )
 
-        let result = try await concatenator.copy(
+        let result = try await concatenator.render(
             concurrency: .automatic
         )
+
+        printConcatenationWarnings(
+            result.document.warnings
+        )
+
+        result.text.clipboard()
 
         let count = result.document.sections.count
 

@@ -115,7 +115,6 @@ public struct ConcatenationWriteStatistics:
     public let outputWriteDuration: TimeInterval
     public let artifactCreationDuration: TimeInterval
     public let cachePersistenceDuration: TimeInterval
-    public let clipboardDuration: TimeInterval
 
     public init(
         duration: TimeInterval = 0,
@@ -125,8 +124,7 @@ public struct ConcatenationWriteStatistics:
         renderDuration: TimeInterval = 0,
         outputWriteDuration: TimeInterval = 0,
         artifactCreationDuration: TimeInterval = 0,
-        cachePersistenceDuration: TimeInterval = 0,
-        clipboardDuration: TimeInterval = 0
+        cachePersistenceDuration: TimeInterval = 0
     ) {
         self.duration = duration
         self.preparation = preparation
@@ -142,8 +140,6 @@ public struct ConcatenationWriteStatistics:
             artifactCreationDuration
         self.cachePersistenceDuration =
             cachePersistenceDuration
-        self.clipboardDuration =
-            clipboardDuration
     }
 
     public var measuredDuration: TimeInterval {
@@ -154,7 +150,6 @@ public struct ConcatenationWriteStatistics:
             + outputWriteDuration
             + artifactCreationDuration
             + cachePersistenceDuration
-            + clipboardDuration
     }
 
     public var otherDuration: TimeInterval {
@@ -192,10 +187,7 @@ public struct ConcatenationWriteStatistics:
                 + rhs.artifactCreationDuration,
             cachePersistenceDuration:
                 lhs.cachePersistenceDuration
-                + rhs.cachePersistenceDuration,
-            clipboardDuration:
-                lhs.clipboardDuration
-                + rhs.clipboardDuration
+                + rhs.cachePersistenceDuration
         )
     }
 }

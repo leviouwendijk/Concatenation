@@ -1,6 +1,8 @@
 import Arguments
+import Clipboard
 import Concatenation
 import Foundation
+import Writers
 
 enum TreeCommand: RunnableArgumentCommand {
     static let name = "tree"
@@ -170,23 +172,26 @@ enum TreeCommand: RunnableArgumentCommand {
 
         let clean = try invocation.flag("clean")
         let copyToClipboard = try invocation.flag("copy")
-        let copyPolicy = clean || copyToClipboard
 
         let maker = FileTreeMaker(
             files: urls,
             rootPath: directories[0],
-            removeTrailingSlash: try invocation.flag("no-trailing-slash"),
-            copyToClipboard: copyPolicy
+            removeTrailingSlash: try invocation.flag("no-trailing-slash")
         )
 
         let tree = maker.generate()
 
+        if clean || copyToClipboard {
+            tree.clipboard()
+        }
+
         if !clean {
             let path = cwd + "/" + (outputFileName ?? "tree.txt")
-            try tree.write(
-                toFile: path,
-                atomically: true,
-                encoding: .utf8
+            try FileWriter(
+                URL(fileURLWithPath: path)
+            ).write(
+                tree,
+                options: .overwriteWithoutBackup
             )
             print("File tree generated: \(path)")
         } else {

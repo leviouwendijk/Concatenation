@@ -1,4 +1,5 @@
 import Arguments
+import Clipboard
 import Concatenation
 
 enum ConcatAnyCopyCommand:
@@ -100,7 +101,9 @@ enum ConcatAnyCopyCommand:
             )
         )
 
-        let result = try await execution.copy()
+        let result = try await execution.renderNonEmpty()
+
+        result.combinedText.clipboard()
 
         if verbose {
             for skipped in result.skipped {

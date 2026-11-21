@@ -1,22 +1,18 @@
 import Foundation
-import Clipboard
 
 public struct FileTreeMaker {
     private let inputPaths: [URL]
     private let root: URL
     private let removeTrailingSlash: Bool
-    private let copyToClipboard: Bool
 
     public init(
         files: [URL],
         rootPath: String,
-        removeTrailingSlash: Bool = false,
-        copyToClipboard: Bool = false
+        removeTrailingSlash: Bool = false
     ) {
         self.inputPaths           = files
         self.root                 = URL(fileURLWithPath: rootPath)
         self.removeTrailingSlash  = removeTrailingSlash
-        self.copyToClipboard      = copyToClipboard
     }
 
     public func generate() -> String {
@@ -63,7 +59,6 @@ public struct FileTreeMaker {
                  + "└── \(filename)\n"
         }
 
-        if copyToClipboard { tree.clipboard() }
         return tree
     }
 }

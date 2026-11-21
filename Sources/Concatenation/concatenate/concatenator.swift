@@ -4,7 +4,6 @@ import IO
 import Terminal
 import Indentation
 import Primitives
-import Clipboard
 import Path
 import Position
 import Writers
@@ -23,7 +22,9 @@ public struct FileConcatenator: SafelyConcatenatable {
     private var reuseProofCache:
         ConcatenationReuseProofCache? = nil
 
-    public let copyToClipboard: Bool
+    /// The caller needs the rendered text, so `write` always renders and
+    /// returns it in `renderResult` instead of reusing an unchanged artifact.
+    public let requiresRenderedText: Bool
     public let verbose: Bool
     public let reportWarnings: Bool
 
@@ -134,7 +135,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         workspace: ConcatenationWorkspace? = nil,
         cache: ConcatenationCacheBinding? = nil,
 
-        copyToClipboard: Bool = false,
+        requiresRenderedText: Bool = false,
         verbose: Bool = false,
         reportWarnings: Bool = true,
 
@@ -178,8 +179,8 @@ public struct FileConcatenator: SafelyConcatenatable {
                 nil
         }
 
-        self.copyToClipboard =
-            copyToClipboard
+        self.requiresRenderedText =
+            requiresRenderedText
 
         self.verbose =
             verbose
@@ -247,7 +248,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         includeSourceModifiedAt: Bool = false,
         obscureMap: [String: String] = [:],
 
-        copyToClipboard: Bool = false,
+        requiresRenderedText: Bool = false,
         verbose: Bool = false,
         reportWarnings: Bool = true,
 
@@ -363,8 +364,8 @@ public struct FileConcatenator: SafelyConcatenatable {
                 workspace,
             cache:
                 cache,
-            copyToClipboard:
-                copyToClipboard,
+            requiresRenderedText:
+                requiresRenderedText,
             verbose:
                 verbose,
             reportWarnings:
@@ -1149,40 +1150,6 @@ public struct FileConcatenator: SafelyConcatenatable {
     }
 
     @discardableResult
-    public func copy() throws -> ConcatenationRenderResult {
-        let rendered = try render()
-
-        if reportWarnings {
-            printWarnings(
-                from: rendered.document
-            )
-        }
-
-        return copy(
-            rendered
-        )
-    }
-
-    @discardableResult
-    public func copy(
-        concurrency: IOConcurrency
-    ) async throws -> ConcatenationRenderResult {
-        let rendered = try await render(
-            concurrency: concurrency
-        )
-
-        if reportWarnings {
-            printWarnings(
-                from: rendered.document
-            )
-        }
-
-        return copy(
-            rendered
-        )
-    }
-
-    @discardableResult
     public func write() throws -> ConcatenationWriteResult {
         guard let outputURL else {
             throw ConcatError.outputRequired
@@ -1217,7 +1184,7 @@ public struct FileConcatenator: SafelyConcatenatable {
             for: preparedDocument
         )
 
-        if !copyToClipboard,
+        if !requiresRenderedText,
            try validatedCachedArtifact(
                 materialFingerprint: materialFingerprint
            ) != nil {
@@ -1249,12 +1216,6 @@ public struct FileConcatenator: SafelyConcatenatable {
             materialFingerprint: materialFingerprint,
             document: preparedDocument
         )
-
-        if copyToClipboard {
-            copy(
-                rendered
-            )
-        }
 
         if verbose {
             print(
@@ -1308,7 +1269,7 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         let fastCandidate: ConcatenationFastReuseCandidate?
 
-        if copyToClipboard {
+        if requiresRenderedText {
             fastCandidate = nil
         } else {
             fastCandidate = try fastReuseCandidate(
@@ -1449,7 +1410,7 @@ public struct FileConcatenator: SafelyConcatenatable {
         let artifactValidationDuration:
             TimeInterval
 
-        if copyToClipboard {
+        if requiresRenderedText {
             cachedArtifact = nil
             artifactValidationDuration = 0
         } else if fastCandidate != nil {
@@ -1580,23 +1541,6 @@ public struct FileConcatenator: SafelyConcatenatable {
                 cachePersistenceStartedAt
             )
 
-        var clipboardDuration:
-            TimeInterval = 0
-
-        if copyToClipboard {
-            let clipboardStartedAt =
-                Date()
-
-            copy(
-                rendered
-            )
-
-            clipboardDuration =
-                Date().timeIntervalSince(
-                    clipboardStartedAt
-                )
-        }
-
         if verbose {
             print(
                 "Done: \(preparedDocument.statistics.selectedLineCount) lines written"
@@ -1630,9 +1574,7 @@ public struct FileConcatenator: SafelyConcatenatable {
                 artifactCreationDuration:
                     artifactCreationDuration,
                 cachePersistenceDuration:
-                    cachePersistenceDuration,
-                clipboardDuration:
-                    clipboardDuration
+                    cachePersistenceDuration
             )
         )
     }
@@ -1868,21 +1810,6 @@ private extension FileConcatenator {
             document: document,
             text: text
         )
-    }
-
-    @discardableResult
-    func copy(
-        _ rendered: ConcatenationRenderResult
-    ) -> ConcatenationRenderResult {
-        rendered.text.clipboard()
-
-        if verbose {
-            print(
-                "Copied output to clipboard"
-            )
-        }
-
-        return rendered
     }
 
     func readSource(

@@ -1,4 +1,3 @@
-import Clipboard
 import Foundation
 import IO
 import Path
@@ -885,8 +884,9 @@ public struct ConAnyExecution: SafelyConcatenatable {
         )
     }
 
-    @discardableResult
-    public func copy(
+    /// Renders every output without writing artifacts, for callers that hand
+    /// the combined text elsewhere (the CLI copies it to the clipboard).
+    public func renderNonEmpty(
         concurrency: IOConcurrency = .automatic
     ) async throws -> ConAnyRenderBatchResult {
         let result = try await render(
@@ -896,8 +896,6 @@ public struct ConAnyExecution: SafelyConcatenatable {
         guard !result.outputs.isEmpty else {
             throw ConAnyExecutionError.noOutputs
         }
-
-        result.combinedText.clipboard()
 
         return result
     }

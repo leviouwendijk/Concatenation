@@ -193,7 +193,6 @@ private extension ConcatenationCorpus {
         FileConcatenator(
             plan: plan,
             cache: cache,
-            copyToClipboard: false,
             verbose: false,
             reportWarnings: false,
             protectSecrets: options.protectSecrets,
