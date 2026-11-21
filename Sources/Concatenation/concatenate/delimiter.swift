@@ -1,7 +1,6 @@
 import Strings
-import Arguments
 
-public enum DelimiterStyle: String, CaseIterable, Sendable, Codable, ArgumentValue {
+public enum DelimiterStyle: String, CaseIterable, Sendable, Codable {
     case none
     case comment
     case asterisk
