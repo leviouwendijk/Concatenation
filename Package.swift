@@ -1,5 +1,4 @@
 // swift-tools-version: 6.1
-// The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
 
@@ -55,10 +54,7 @@ let package = Package(
                 .product(name: "SelectionParsing", package: "Selection"),
                 .product(name: "Partition", package: "Partition"),
                 .product(name: "Arguments", package: "Arguments"),
-            ],
-            // resources: [
-            //     .process("Resources")
-            // ],
+            ]
         ),
         .target(
             name: "ConcatenationServiceTransport",
