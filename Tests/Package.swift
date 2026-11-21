@@ -10,7 +10,7 @@ let package = Package(
     ],
     products: [
         .executable(
-            name: "contest",
+            name: "t_concatenation",
             targets: ["ConcatenationTestFlows"]
         ),
     ],
