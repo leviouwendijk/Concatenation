@@ -1,3 +1,4 @@
+import Concatenation
 import Foundation
 
 public func compilePatterns(_ globs: [String]) throws -> [NSRegularExpression] {

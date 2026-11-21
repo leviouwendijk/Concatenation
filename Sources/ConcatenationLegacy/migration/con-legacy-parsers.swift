@@ -1,3 +1,4 @@
+import Concatenation
 public enum ConLegacyParser {
     public static func parse(
         _ text: String

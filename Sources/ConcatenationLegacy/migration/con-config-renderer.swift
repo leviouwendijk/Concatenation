@@ -1,3 +1,4 @@
+import Concatenation
 public enum ConConfigRenderer {
     public static func render(
         _ config: ConAnyConfig

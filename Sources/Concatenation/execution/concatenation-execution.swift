@@ -3,28 +3,28 @@ import IO
 import Path
 import Selection
 
-public struct ConAnyExecutionOptions {
-    public let maxDepth: Int?
-    public let includeDotfiles: Bool
-    public let ignoreMap: IgnoreMap
+public struct ConcatenationExecutionOptions: Sendable {
+    public var maxDepth: Int?
+    public var includeDotfiles: Bool
 
-    public let delimiterStyle: DelimiterStyle
-    public let delimiterClosure: Bool
-    public let maxLinesPerFile: Int?
-    public let rawOutput: Bool
-    public let outputFormat: ConcatenationOutputFormat
-    public let includeSourceLineNumbers: Bool
-    public let includeSourceModifiedAt: Bool
+    public var delimiterStyle: DelimiterStyle
+    public var delimiterClosure: Bool
+    public var maxLinesPerFile: Int?
+    public var rawOutput: Bool
+    public var outputFormat: ConcatenationOutputFormat
+    public var includeSourceLineNumbers: Bool
+    public var includeSourceModifiedAt: Bool
+    /// Literal value → obscuring method (`redact`, `preserve`, `verbose`).
+    public var obscurations: [String: String]
 
-    public let protectSecrets: Bool
-    public let allowSecrets: Bool
-    public let failOnBlockedFiles: Bool
-    public let deepSecretInspection: Bool
+    public var protectSecrets: Bool
+    public var allowSecrets: Bool
+    public var failOnBlockedFiles: Bool
+    public var deepSecretInspection: Bool
 
     public init(
         maxDepth: Int? = nil,
         includeDotfiles: Bool = false,
-        ignoreMap: IgnoreMap = .init(),
         delimiterStyle: DelimiterStyle = .boxed,
         delimiterClosure: Bool = false,
         maxLinesPerFile: Int? = 10_000,
@@ -32,6 +32,7 @@ public struct ConAnyExecutionOptions {
         outputFormat: ConcatenationOutputFormat = .text,
         includeSourceLineNumbers: Bool = false,
         includeSourceModifiedAt: Bool = false,
+        obscurations: [String: String] = [:],
         protectSecrets: Bool = true,
         allowSecrets: Bool = false,
         failOnBlockedFiles: Bool = false,
@@ -39,7 +40,6 @@ public struct ConAnyExecutionOptions {
     ) {
         self.maxDepth = maxDepth
         self.includeDotfiles = includeDotfiles
-        self.ignoreMap = ignoreMap
 
         self.delimiterStyle = delimiterStyle
         self.delimiterClosure = delimiterClosure
@@ -48,7 +48,7 @@ public struct ConAnyExecutionOptions {
         self.outputFormat = outputFormat
         self.includeSourceLineNumbers = includeSourceLineNumbers
         self.includeSourceModifiedAt = includeSourceModifiedAt
-
+        self.obscurations = obscurations
 
         self.protectSecrets = protectSecrets
         self.allowSecrets = allowSecrets
@@ -57,51 +57,27 @@ public struct ConAnyExecutionOptions {
     }
 }
 
-public struct ConAnyResolvedOutput {
-    public let renderable:
-        ConAnyRenderableObject
+public struct ConcatenationResolvedOutput {
+    /// The definition output this was resolved from.
+    public let declaration: ConcatenationDefinition.Output
 
-    public let outputURL: URL
-
-    public let plan:
-        ConcatenationPlan
+    public let plan: ConcatenationPlan
 
     /// What the path scan reported while resolving this output's includes.
-    public let scanWarnings:
-        [SelectionScanWarning]
+    public let scanWarnings: [SelectionScanWarning]
 
     public init(
-        renderable: ConAnyRenderableObject,
-        outputURL: URL,
+        declaration: ConcatenationDefinition.Output,
         plan: ConcatenationPlan,
         scanWarnings: [SelectionScanWarning] = []
     ) {
-        self.init(
-            renderable: renderable,
-            standardizedOutputURL:
-                outputURL.standardizedFileURL,
-            plan: plan,
-            scanWarnings: scanWarnings
-        )
+        self.declaration = declaration
+        self.plan = plan
+        self.scanWarnings = scanWarnings
     }
 
-    init(
-        renderable: ConAnyRenderableObject,
-        standardizedOutputURL outputURL: URL,
-        plan: ConcatenationPlan,
-        scanWarnings: [SelectionScanWarning]
-    ) {
-        self.renderable =
-            renderable
-
-        self.outputURL =
-            outputURL
-
-        self.plan =
-            plan
-
-        self.scanWarnings =
-            scanWarnings
+    public var outputURL: URL {
+        declaration.destination
     }
 
     public var sources:
@@ -111,7 +87,7 @@ public struct ConAnyResolvedOutput {
     }
 
     public var name: String {
-        renderable.output
+        declaration.name
     }
 
     public var isEmpty: Bool {
@@ -123,12 +99,12 @@ public struct ConAnyResolvedOutput {
     }
 }
 
-public struct ConAnyRenderedOutput {
-    public let resolved: ConAnyResolvedOutput
+public struct ConcatenationRenderedOutput {
+    public let resolved: ConcatenationResolvedOutput
     public let result: ConcatenationRenderResult
 
     public init(
-        resolved: ConAnyResolvedOutput,
+        resolved: ConcatenationResolvedOutput,
         result: ConcatenationRenderResult
     ) {
         self.resolved = resolved
@@ -144,12 +120,12 @@ public struct ConAnyRenderedOutput {
     }
 }
 
-public struct ConAnyWrittenOutput {
-    public let resolved: ConAnyResolvedOutput
+public struct ConcatenationWrittenOutput {
+    public let resolved: ConcatenationResolvedOutput
     public let result: ConcatenationWriteResult
 
     public init(
-        resolved: ConAnyResolvedOutput,
+        resolved: ConcatenationResolvedOutput,
         result: ConcatenationWriteResult
     ) {
         self.resolved = resolved
@@ -161,7 +137,7 @@ public struct ConAnyWrittenOutput {
     }
 }
 
-public struct ConAnyResolutionStatistics:
+public struct ConcatenationResolutionStatistics:
     Sendable,
     Equatable
 {
@@ -172,7 +148,7 @@ public struct ConAnyResolutionStatistics:
     public let physicalTraversals:
         [PathScanPhysicalTraversalStatistics]
     public let resolver:
-        ConAnyResolverStatistics
+        ConcatenationResolverStatistics
     public let outputAssemblyDuration:
         TimeInterval
     public let uniqueRoots: [URL]
@@ -187,7 +163,7 @@ public struct ConAnyResolutionStatistics:
         physicalTraversals:
             [PathScanPhysicalTraversalStatistics] = [],
         resolver:
-            ConAnyResolverStatistics = .init(),
+            ConcatenationResolverStatistics = .init(),
         outputAssemblyDuration:
             TimeInterval = 0,
         uniqueRoots: [URL] = [],
@@ -223,28 +199,28 @@ public struct ConAnyResolutionStatistics:
     }
 }
 
-public struct ConAnyResolvedBatch {
-    public let outputs: [ConAnyResolvedOutput]
-    public let statistics: ConAnyResolutionStatistics
+public struct ConcatenationResolvedBatch {
+    public let outputs: [ConcatenationResolvedOutput]
+    public let statistics: ConcatenationResolutionStatistics
 
     public init(
-        outputs: [ConAnyResolvedOutput],
-        statistics: ConAnyResolutionStatistics
+        outputs: [ConcatenationResolvedOutput],
+        statistics: ConcatenationResolutionStatistics
     ) {
         self.outputs = outputs
         self.statistics = statistics
     }
 }
 
-public struct ConAnyRenderBatchResult {
-    public let outputs: [ConAnyRenderedOutput]
-    public let skipped: [ConAnyResolvedOutput]
-    public let resolution: ConAnyResolutionStatistics
+public struct ConcatenationRenderBatchResult {
+    public let outputs: [ConcatenationRenderedOutput]
+    public let skipped: [ConcatenationResolvedOutput]
+    public let resolution: ConcatenationResolutionStatistics
 
     public init(
-        outputs: [ConAnyRenderedOutput],
-        skipped: [ConAnyResolvedOutput],
-        resolution: ConAnyResolutionStatistics = .init()
+        outputs: [ConcatenationRenderedOutput],
+        skipped: [ConcatenationResolvedOutput],
+        resolution: ConcatenationResolutionStatistics = .init()
     ) {
         self.outputs = outputs
         self.skipped = skipped
@@ -287,7 +263,7 @@ public struct ConAnyRenderBatchResult {
     }
 }
 
-public enum ConAnyContextIndexAction:
+public enum ConcatenationContextIndexAction:
     Equatable
 {
     case none
@@ -298,7 +274,7 @@ public enum ConAnyContextIndexAction:
     case unchanged(URL)
 }
 
-public enum ConAnyExecutionKind:
+public enum ConcatenationExecutionKind:
     Sendable,
     Equatable
 {
@@ -307,7 +283,7 @@ public enum ConAnyExecutionKind:
     case rebuilt
 }
 
-public struct ConAnySourcePreflightStatistics:
+public struct ConcatenationSourcePreflightStatistics:
     Sendable,
     Equatable
 {
@@ -340,7 +316,7 @@ public struct ConAnySourcePreflightStatistics:
     }
 }
 
-public struct ConAnyReuseProofStatistics:
+public struct ConcatenationReuseProofStatistics:
     Sendable,
     Equatable
 {
@@ -366,7 +342,7 @@ public struct ConAnyReuseProofStatistics:
     }
 }
 
-public struct ConAnyWriteStatistics:
+public struct ConcatenationWriteBatchStatistics:
     Sendable,
     Equatable
 {
@@ -404,27 +380,27 @@ public struct ConAnyWriteStatistics:
     }
 }
 
-public struct ConAnyWriteBatchResult {
-    public let outputs: [ConAnyWrittenOutput]
-    public let skipped: [ConAnyResolvedOutput]
-    public let contextIndexAction: ConAnyContextIndexAction
-    public let resolution: ConAnyResolutionStatistics
+public struct ConcatenationWriteBatchResult {
+    public let outputs: [ConcatenationWrittenOutput]
+    public let skipped: [ConcatenationResolvedOutput]
+    public let contextIndexAction: ConcatenationContextIndexAction
+    public let resolution: ConcatenationResolutionStatistics
     public let sourcePreflight:
-        ConAnySourcePreflightStatistics
+        ConcatenationSourcePreflightStatistics
     public let reuseProofs:
-        ConAnyReuseProofStatistics
-    public let statistics: ConAnyWriteStatistics
+        ConcatenationReuseProofStatistics
+    public let statistics: ConcatenationWriteBatchStatistics
 
     public init(
-        outputs: [ConAnyWrittenOutput],
-        skipped: [ConAnyResolvedOutput],
-        contextIndexAction: ConAnyContextIndexAction,
-        resolution: ConAnyResolutionStatistics = .init(),
+        outputs: [ConcatenationWrittenOutput],
+        skipped: [ConcatenationResolvedOutput],
+        contextIndexAction: ConcatenationContextIndexAction,
+        resolution: ConcatenationResolutionStatistics = .init(),
         sourcePreflight:
-            ConAnySourcePreflightStatistics = .init(),
+            ConcatenationSourcePreflightStatistics = .init(),
         reuseProofs:
-            ConAnyReuseProofStatistics = .init(),
-        statistics: ConAnyWriteStatistics = .init()
+            ConcatenationReuseProofStatistics = .init(),
+        statistics: ConcatenationWriteBatchStatistics = .init()
     ) {
         self.outputs = outputs
         self.skipped = skipped
@@ -511,7 +487,7 @@ public struct ConAnyWriteBatchResult {
             + cache.contentHits
     }
 
-    public var executionKind: ConAnyExecutionKind {
+    public var executionKind: ConcatenationExecutionKind {
         if renderedOutputCount == 0,
            writtenOutputCount == 0 {
             return .unchanged
@@ -550,61 +526,7 @@ public struct ConAnyWriteBatchResult {
     }
 }
 
-struct ConAnyOutputPlan:
-    Sendable
-{
-    let destinations: [URL]
-
-    init(
-        configuration: ConAnyConfig,
-        resolver: ConAnyResolver
-    ) throws {
-        let count =
-            configuration.renderables.count
-
-        var destinations: [URL] = []
-        var seenPaths: Set<String> = []
-
-        destinations.reserveCapacity(
-            count
-        )
-
-        seenPaths.reserveCapacity(
-            count
-        )
-
-        for renderable in configuration.renderables {
-            let destination =
-                resolver.outputURL(
-                    for: renderable
-                )
-                .standardizedFileURL
-
-            guard seenPaths.insert(
-                destination.path
-            ).inserted else {
-                throw ConAnyExecutionError.outputCollision(
-                    destination
-                )
-            }
-
-            destinations.append(
-                destination
-            )
-        }
-
-        self.destinations =
-            destinations
-    }
-
-    subscript(
-        index: Int
-    ) -> URL {
-        destinations[index]
-    }
-}
-
-public enum ConAnyExecutionError:
+public enum ConcatenationExecutionError:
     Error,
     LocalizedError
 {
@@ -614,262 +536,143 @@ public enum ConAnyExecutionError:
     public var errorDescription: String? {
         switch self {
         case .noOutputs:
-            return "No .conany outputs contained matching files."
+            return "No outputs contained matching files."
 
         case .outputCollision(let url):
-            return "Multiple .conany outputs resolve to the same destination: \(url.path)"
+            return "Multiple outputs resolve to the same destination: \(url.path)"
         }
     }
 }
 
-public struct ConAnyExecution: SafelyConcatenatable {
-    public let configURL: URL
-    public let configuration: ConAnyConfig
-    public let options: ConAnyExecutionOptions
+public struct ConcatenationExecution: SafelyConcatenatable {
+    public let definition: ConcatenationDefinition
+    public let options: ConcatenationExecutionOptions
 
-    private let resolver:
-        ConAnyResolver
-
-    private let outputPlan:
-        ConAnyOutputPlan
-
+    /// Fails with `outputCollision` when two outputs share a destination.
     public init(
-        configURL: URL,
-        configuration: ConAnyConfig,
-        options: ConAnyExecutionOptions = .init()
+        definition: ConcatenationDefinition,
+        options: ConcatenationExecutionOptions = .init()
     ) throws {
-        let standardized =
-            configURL.standardizedFileURL
+        var seenPaths: Set<String> = []
 
-        let resolver =
-            ConAnyResolver(
-                baseDir:
-                    standardized
-                    .deletingLastPathComponent()
-                    .path
-            )
+        for output in definition.outputs {
+            guard seenPaths.insert(
+                output.destination.path
+            ).inserted else {
+                throw ConcatenationExecutionError.outputCollision(
+                    output.destination
+                )
+            }
+        }
 
-        let outputPlan =
-            try ConAnyOutputPlan(
-                configuration:
-                    configuration,
-                resolver:
-                    resolver
-            )
-
-        self.configURL =
-            standardized
-
-        self.configuration =
-            configuration
-
-        self.options =
-            options
-
-        self.resolver =
-            resolver
-
-        self.outputPlan =
-            outputPlan
+        self.definition = definition
+        self.options = options
     }
 
-    public init(
-        configURL: URL,
-        options: ConAnyExecutionOptions = .init()
-    ) throws {
-        let configuration =
-            try ConAnyParser.parseFile(
-                at: configURL
-            )
-
-        try self.init(
-            configURL: configURL,
-            configuration: configuration,
-            options: options
-        )
-    }
-
-    public func resolveBatch() throws -> ConAnyResolvedBatch {
+    public func resolveBatch() throws -> ConcatenationResolvedBatch {
         let startedAt = Date()
+        let outputsToResolve = definition.outputs
 
-        let resolverBatch = try resolver.resolveResults(
-            configuration.renderables,
+        let resolverBatch = try ConcatenationResolver(
+            anchor: definition.anchor
+        ).resolve(
+            outputsToResolve.map(\.specification),
             maxDepth: options.maxDepth,
-            includeDotfiles: options.includeDotfiles,
-            ignoreMap: options.ignoreMap
+            includeHidden: options.includeDotfiles
         )
 
-        precondition(
-            resolverBatch.results.count
-                == configuration.renderables.count
-        )
+        let outputAssemblyStartedAt = Date()
 
-        let outputAssemblyStartedAt =
-            Date()
-
-        let renderOptions =
-            ConcatenationRenderOptions(
-                delimiter:
-                    .init(
-                        style:
-                            options.delimiterStyle,
-                        closure:
-                            options.delimiterClosure
-                    ),
-                line:
-                    .init(
-                        filemax:
-                            options.maxLinesPerFile,
-                        trimblanks:
-                            true,
-                        numbers:
-                            options
-                            .includeSourceLineNumbers
-                    ),
-                output:
-                    .init(
-                        format:
-                            options.outputFormat,
-                        raw:
-                            options.rawOutput,
-                        relativepaths:
-                            false,
-                        modifiedstamp:
-                            options
-                            .includeSourceModifiedAt,
-                        obscurations:
-                            options
-                            .ignoreMap
-                            .obscureValues
-                    )
+        let renderOptions = ConcatenationRenderOptions(
+            delimiter: .init(
+                style: options.delimiterStyle,
+                closure: options.delimiterClosure
+            ),
+            line: .init(
+                filemax: options.maxLinesPerFile,
+                trimblanks: true,
+                numbers: options.includeSourceLineNumbers
+            ),
+            output: .init(
+                format: options.outputFormat,
+                raw: options.rawOutput,
+                relativepaths: false,
+                modifiedstamp: options.includeSourceModifiedAt,
+                obscurations: options.obscurations
             )
+        )
 
-        var outputs: [ConAnyResolvedOutput] = []
+        var outputs: [ConcatenationResolvedOutput] = []
 
         outputs.reserveCapacity(
-            configuration.renderables.count
+            outputsToResolve.count
         )
 
-        for index in configuration.renderables.indices {
-            let renderable =
-                configuration.renderables[index]
-
-            let resolved =
-                resolverBatch.results[index]
-
-            let matches =
-                resolved.matches
-
-            let presentationPlan =
-                resolver.presentationPlan(
-                    for: renderable
-                )
-
-            var sources:
-                [ConcatenationSource] = []
-
-            sources.reserveCapacity(
-                matches.count
-            )
-
-            for match in matches {
-                sources.append(
-                    ConcatenationSource(
-                        standardizedFile:
-                            match.url,
-                        presentedPath:
-                            resolver.presentedPath(
-                                for:
-                                    match,
-                                using:
-                                    presentationPlan
-                            ),
-                        selections:
-                            match.contentSelections
-                    )
+        for (declaration, resolved) in zip(
+            outputsToResolve,
+            resolverBatch.results
+        ) {
+            let sources = resolved.matches.map { match in
+                ConcatenationSource(
+                    standardizedFile: match.url,
+                    presentedPath: declaration.presentedPath(
+                        for: match
+                    ),
+                    selections: match.contentSelections
                 )
             }
 
-            let plan =
-                ConcatenationPlan(
-                    context:
-                        renderable.context,
-                    sources:
-                        sources,
-                    options:
-                        renderOptions
-                )
-
             outputs.append(
-                ConAnyResolvedOutput(
-                    renderable:
-                        renderable,
-                    standardizedOutputURL:
-                        outputPlan[index],
-                    plan:
-                        plan,
-                    scanWarnings:
-                        resolved.warnings
+                ConcatenationResolvedOutput(
+                    declaration: declaration,
+                    plan: ConcatenationPlan(
+                        context: declaration.context,
+                        sources: sources,
+                        options: renderOptions
+                    ),
+                    scanWarnings: resolved.warnings
                 )
             )
         }
 
-        let plannedTraversalRoots =
-            resolverBatch
-            .results
-            .flatMap(
-                \.plannedTraversalRoots
-            )
+        let plannedTraversalRoots = resolverBatch.results.flatMap(
+            \.plannedTraversalRoots
+        )
 
-        let matchedOutputCount = outputs.reduce(
-            0
-        ) {
+        let matchedOutputCount = outputs.reduce(0) {
             $0 + ($1.isEmpty ? 0 : 1)
         }
 
-        let outputAssemblyDuration =
-            Date().timeIntervalSince(
-                outputAssemblyStartedAt
-            )
-
-        let duration = Date().timeIntervalSince(
-            startedAt
+        let outputAssemblyDuration = Date().timeIntervalSince(
+            outputAssemblyStartedAt
         )
 
         return .init(
             outputs: outputs,
             statistics: .init(
-                duration: duration,
-                scanRequestCount:
-                    configuration.renderables.count,
-                plannedTraversalCount:
-                    resolverBatch.logicalTraversalCount,
-                physicalTraversalCount:
-                    resolverBatch.physicalTraversalCount,
-                physicalTraversals:
-                    resolverBatch.physicalTraversals,
-                resolver:
-                    resolverBatch.statistics,
-                outputAssemblyDuration:
-                    outputAssemblyDuration,
-                uniqueRoots:
-                    plannedTraversalRoots,
-                matchedOutputCount:
-                    matchedOutputCount,
-                unmatchedOutputCount:
-                    outputs.count
-                    - matchedOutputCount
+                duration: Date().timeIntervalSince(
+                    startedAt
+                ),
+                scanRequestCount: outputsToResolve.count,
+                plannedTraversalCount: resolverBatch.logicalTraversalCount,
+                physicalTraversalCount: resolverBatch.physicalTraversalCount,
+                physicalTraversals: resolverBatch.physicalTraversals,
+                resolver: resolverBatch.statistics,
+                outputAssemblyDuration: outputAssemblyDuration,
+                uniqueRoots: plannedTraversalRoots,
+                matchedOutputCount: matchedOutputCount,
+                unmatchedOutputCount: outputs.count - matchedOutputCount
             )
         )
     }
 
-    public func resolve() throws -> [ConAnyResolvedOutput] {
+    public func resolve() throws -> [ConcatenationResolvedOutput] {
         try resolveBatch().outputs
     }
 
     public func render(
         concurrency: IOConcurrency = .automatic
-    ) async throws -> ConAnyRenderBatchResult {
+    ) async throws -> ConcatenationRenderBatchResult {
         try await renderResolved(
             session: nil,
             concurrency: concurrency
@@ -879,7 +682,7 @@ public struct ConAnyExecution: SafelyConcatenatable {
     public func render(
         using session: ConcatenationSession,
         concurrency: IOConcurrency = .automatic
-    ) async throws -> ConAnyRenderBatchResult {
+    ) async throws -> ConcatenationRenderBatchResult {
         try await renderResolved(
             session: session,
             concurrency: concurrency
@@ -890,13 +693,13 @@ public struct ConAnyExecution: SafelyConcatenatable {
     /// the combined text elsewhere (the CLI copies it to the clipboard).
     public func renderNonEmpty(
         concurrency: IOConcurrency = .automatic
-    ) async throws -> ConAnyRenderBatchResult {
+    ) async throws -> ConcatenationRenderBatchResult {
         let result = try await render(
             concurrency: concurrency
         )
 
         guard !result.outputs.isEmpty else {
-            throw ConAnyExecutionError.noOutputs
+            throw ConcatenationExecutionError.noOutputs
         }
 
         return result
@@ -904,7 +707,7 @@ public struct ConAnyExecution: SafelyConcatenatable {
 
     public func write(
         concurrency: IOConcurrency = .automatic
-    ) async throws -> ConAnyWriteBatchResult {
+    ) async throws -> ConcatenationWriteBatchResult {
         let startedAt =
             Date()
 
@@ -948,7 +751,7 @@ public struct ConAnyExecution: SafelyConcatenatable {
             )
 
         let sourcePreflightStatistics =
-            ConAnySourcePreflightStatistics(
+            ConcatenationSourcePreflightStatistics(
                 duration:
                     Date().timeIntervalSince(
                         sourcePreflightStartedAt
@@ -974,15 +777,15 @@ public struct ConAnyExecution: SafelyConcatenatable {
             ConcatenationReuseProofCache()
 
         let workspace = ConcatenationWorkspace(
-            configuration: configURL
+            configuration: definition.configuration
         )
 
-        var outputs: [ConAnyWrittenOutput] = []
-        var skipped: [ConAnyResolvedOutput] = []
+        var outputs: [ConcatenationWrittenOutput] = []
+        var skipped: [ConcatenationResolvedOutput] = []
 
         var collectedContexts: [String] = []
 
-        if configuration.renderables.contains(
+        if definition.outputs.contains(
             where: {
                 $0.context != nil
             }
@@ -1003,7 +806,7 @@ public struct ConAnyExecution: SafelyConcatenatable {
                 continue
             }
 
-            if let context = output.renderable.context {
+            if let context = output.declaration.context {
                 collectedContexts.append(
                     context.object(
                         outputURL: output.outputURL
@@ -1037,7 +840,7 @@ public struct ConAnyExecution: SafelyConcatenatable {
             reuseProofCache.snapshot()
 
         let reuseProofStatistics =
-            ConAnyReuseProofStatistics(
+            ConcatenationReuseProofStatistics(
                 lookupCount:
                     reuseProofSnapshot.lookupCount,
                 uniqueProofCount:
@@ -1096,21 +899,19 @@ public struct ConAnyExecution: SafelyConcatenatable {
 
 }
 
-private extension ConAnyExecution {
+private extension ConcatenationExecution {
     var configDirectory: URL {
-        configURL
-            .deletingLastPathComponent()
-            .standardizedFileURL
+        definition.anchor
     }
 
     func renderResolved(
         session: ConcatenationSession?,
         concurrency: IOConcurrency
-    ) async throws -> ConAnyRenderBatchResult {
+    ) async throws -> ConcatenationRenderBatchResult {
         let resolvedBatch = try resolveBatch()
 
-        var outputs: [ConAnyRenderedOutput] = []
-        var skipped: [ConAnyResolvedOutput] = []
+        var outputs: [ConcatenationRenderedOutput] = []
+        var skipped: [ConcatenationResolvedOutput] = []
 
         outputs.reserveCapacity(
             resolvedBatch.outputs.count
@@ -1157,7 +958,7 @@ private extension ConAnyExecution {
     }
 
     func makeConcatenator(
-        for resolved: ConAnyResolvedOutput,
+        for resolved: ConcatenationResolvedOutput,
         outputURL: URL?,
         workspace: ConcatenationWorkspace?,
         cache: ConcatenationCacheBinding? = nil,
@@ -1196,7 +997,7 @@ private extension ConAnyExecution {
     func updateContextIndex(
         collectedContexts: [String],
         refresh: Bool
-    ) throws -> ConAnyContextIndexAction {
+    ) throws -> ConcatenationContextIndexAction {
         let contextsURL = configDirectory
             .appendingPathComponent(
                 "context_index.txt",

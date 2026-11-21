@@ -1,22 +1,6 @@
 import Foundation
 import Readers
 
-public func readLines(
-    from url: URL
-) throws -> [String] {
-    let result = try LineReader(url).read(
-        options: .init(
-            text: .init(
-                decoding: .commonTextFallbacks,
-                missingFilePolicy: .throwError,
-                newlineNormalization: .unix
-            )
-        )
-    )
-
-    return result.lines
-}
-
 public func processBlankLines(
     _ lines: [String],
     trim: Bool

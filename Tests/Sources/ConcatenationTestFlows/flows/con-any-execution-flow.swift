@@ -1,4 +1,5 @@
 import Concatenation
+import ConcatenationLegacy
 import Foundation
 import IO
 import TestFlows
@@ -109,10 +110,9 @@ extension ConcatenationFlowSuite {
                     options: .overwriteWithoutBackup
                 )
 
-                let execution = try ConAnyExecution(
-                    configURL: configURL,
+                let execution = try ConcatenationExecution(
+                    conAnyAt: configURL,
                     options: .init(
-                        ignoreMap: IgnoreMap(),
                         delimiterStyle: .comment,
                         delimiterClosure: false,
                         maxLinesPerFile: nil,
@@ -196,7 +196,7 @@ extension ConcatenationFlowSuite {
 
                 try Expect.true(
                     resolvedBatch.statistics.resolver.totalDuration >= 0
-                        && resolvedBatch.statistics.resolver.specificationDuration >= 0
+                        && resolvedBatch.statistics.resolver.mergeDuration >= 0
                         && resolvedBatch.statistics.resolver.compilationDuration >= 0
                         && resolvedBatch.statistics.resolver.selection.path.totalDuration >= 0
                         && resolvedBatch.statistics.outputAssemblyDuration >= 0,
@@ -652,7 +652,7 @@ extension ConcatenationFlowSuite {
                 }
 
                 func sourceReads(
-                    _ result: ConAnyRenderBatchResult
+                    _ result: ConcatenationRenderBatchResult
                 ) -> Int {
                     result.outputs.reduce(
                         0
@@ -667,7 +667,7 @@ extension ConcatenationFlowSuite {
                 }
 
                 func metadataHits(
-                    _ result: ConAnyRenderBatchResult
+                    _ result: ConcatenationRenderBatchResult
                 ) -> Int {
                     result.outputs.reduce(
                         0
@@ -700,7 +700,7 @@ extension ConcatenationFlowSuite {
                     to: configURL
                 )
 
-                let options = ConAnyExecutionOptions(
+                let options = ConcatenationExecutionOptions(
                     maxLinesPerFile: nil,
                     protectSecrets: false,
                     deepSecretInspection: false
@@ -948,10 +948,9 @@ extension ConcatenationFlowSuite {
                     options: .overwriteWithoutBackup
                 )
 
-                let execution = try ConAnyExecution(
-                    configURL: configURL,
+                let execution = try ConcatenationExecution(
+                    conAnyAt: configURL,
                     options: .init(
-                        ignoreMap: IgnoreMap(),
                         maxLinesPerFile: nil,
                         protectSecrets: false,
                         deepSecretInspection: false

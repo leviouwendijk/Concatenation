@@ -7,6 +7,7 @@ enum ConcatenationFlowSuite: TestFlowRegistry {
         conLegacyMigrationFlow,
         conAnyNestingFlow,
         conAnyExecutionFlow,
+        conAnyLoweringFlow,
         conCacheFlow,
         conCacheStressFlow,
         conSourceSnapshotFlow,

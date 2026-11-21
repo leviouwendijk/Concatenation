@@ -1,3 +1,4 @@
+import Concatenation
 import Foundation
 
 public enum ConignoreSection {

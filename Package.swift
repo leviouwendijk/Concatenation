@@ -16,6 +16,7 @@ let package = Package(
             name: "con",
             targets: ["con"]
         ),
+        .library(name: "ConcatenationLegacy", targets: ["ConcatenationLegacy"]),
         .library(name: "ConcatenationServiceTransport", targets: ["ConcatenationServiceTransport"]),
     ],
     dependencies: [
@@ -49,19 +50,34 @@ let package = Package(
                 .product(name: "Readers", package: "Readers"),
                 .product(name: "Selection", package: "Selection"),
                 .product(name: "SelectionParsing", package: "Selection"),
+            ]
+        ),
+        .target(
+            name: "ConcatenationLegacy",
+            dependencies: [
+                .target(name: "Concatenation"),
+                .product(name: "IO", package: "IO"),
+                .product(name: "Path", package: "Path"),
+                .product(name: "PathParsing", package: "Path"),
+                .product(name: "Readers", package: "Readers"),
+                .product(name: "Selection", package: "Selection"),
+                .product(name: "SelectionParsing", package: "Selection"),
                 .product(name: "Partition", package: "Partition"),
+                .product(name: "Writers", package: "Writers"),
             ]
         ),
         .target(
             name: "ConcatenationServiceTransport",
             dependencies: [
                 .target(name: "Concatenation"),
+                .target(name: "ConcatenationLegacy"),
             ]
         ),
         .executableTarget(
             name: "con",
             dependencies: [
                 .target(name: "Concatenation"),
+                .target(name: "ConcatenationLegacy"),
                 .target(name: "ConcatenationServiceTransport"),
                 .product(name: "Arguments", package: "Arguments"),
                 .product(name: "Clipboard", package: "Clipboard"),

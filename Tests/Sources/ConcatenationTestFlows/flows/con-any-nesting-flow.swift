@@ -1,5 +1,6 @@
 import Foundation
 import Concatenation
+import ConcatenationLegacy
 import IO
 import Readers
 import Writers
@@ -106,11 +107,11 @@ extension ConcatenationFlowSuite {
 
                 let renderable = config.renderables[0]
 
-                let resolver = ConAnyResolver(
-                    baseDir: root.path
+                let lowering = ConAnyLowering(
+                    baseDirectory: root
                 )
 
-                let output = resolver.outputURL(
+                let output = lowering.outputURL(
                     for: renderable
                 )
 
@@ -306,8 +307,8 @@ extension ConcatenationFlowSuite {
                 var collision: URL?
 
                 do {
-                    _ = try ConAnyExecution(
-                        configURL:
+                    _ = try ConcatenationExecution(
+                        conAnyAt:
                             root.appendingPathComponent(
                                 ".conany",
                                 isDirectory: false
@@ -315,7 +316,7 @@ extension ConcatenationFlowSuite {
                         configuration:
                             configuration
                     )
-                } catch ConAnyExecutionError.outputCollision(
+                } catch ConcatenationExecutionError.outputCollision(
                     let url
                 ) {
                     collision = url

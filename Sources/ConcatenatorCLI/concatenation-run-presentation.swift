@@ -103,7 +103,7 @@ func concatenationRunStatusEnabled(
 }
 
 func printConAnyRunSummary(
-    _ result: ConAnyWriteBatchResult,
+    _ result: ConcatenationWriteBatchResult,
     identity: ConcatenationRunIdentity,
     completedAt: Date = Date(),
     verbose: Bool
@@ -216,14 +216,13 @@ func printConAnyRunSummary(
             selection.path
 
         let measuredDuration =
-            resolver.specificationDuration
-            + resolver.compilationDuration
+            resolver.compilationDuration
             + pathStages.planningDuration
             + pathStages.walkingDuration
             + pathStages.dispatchDuration
             + pathStages.resultConstructionDuration
             + selection.resultConstructionDuration
-            + resolver.filteringDuration
+            + resolver.mergeDuration
             + resolver.assemblyDuration
             + result.resolution.outputAssemblyDuration
 
@@ -238,12 +237,6 @@ func printConAnyRunSummary(
             .init(
                 title: "Resolver stages",
                 items: [
-                    .field(
-                        label: "spec",
-                        value: formattedDuration(
-                            resolver.specificationDuration
-                        )
-                    ),
                     .field(
                         label: "compile",
                         value: formattedDuration(
@@ -281,9 +274,9 @@ func printConAnyRunSummary(
                         )
                     ),
                     .field(
-                        label: "filter",
+                        label: "merge",
                         value: formattedDuration(
-                            resolver.filteringDuration
+                            resolver.mergeDuration
                         )
                     ),
                     .field(
@@ -882,7 +875,7 @@ func printConcatenationWarnings(
 /// Lists, per output, the files a `.conany` block resolved to and what the
 /// path scan warned about. `--verbose` resolution detail.
 func printConAnyResolution(
-    _ outputs: [ConAnyResolvedOutput]
+    _ outputs: [ConcatenationResolvedOutput]
 ) {
     for output in outputs {
         print(

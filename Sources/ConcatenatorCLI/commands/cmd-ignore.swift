@@ -1,5 +1,6 @@
 import Arguments
 import Concatenation
+import ConcatenationLegacy
 
 enum IgnoreCommand: RunnableArgumentCommand {
     static let name = "ignore"

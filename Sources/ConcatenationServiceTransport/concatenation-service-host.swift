@@ -1,4 +1,5 @@
 import Concatenation
+import ConcatenationLegacy
 import Dispatch
 import Foundation
 
@@ -219,8 +220,8 @@ private extension ConcatenationServiceHost {
     func importCorpora(
         _ request: ConcatenationServiceImportRequest
     ) async throws -> [ConcatenationCorpusStatus] {
-        let outputs = try ConAnyExecution(
-            configURL: request.configuration
+        let outputs = try ConcatenationExecution(
+            conAnyAt: request.configuration
         )
         .resolve()
 
@@ -325,9 +326,9 @@ private extension ConcatenationServiceHost {
 
     func resolve(
         _ attachment: ConcatenationServiceAttachRequest
-    ) throws -> ConAnyResolvedOutput {
-        let outputs = try ConAnyExecution(
-            configURL: attachment.configuration
+    ) throws -> ConcatenationResolvedOutput {
+        let outputs = try ConcatenationExecution(
+            conAnyAt: attachment.configuration
         )
         .resolve()
 

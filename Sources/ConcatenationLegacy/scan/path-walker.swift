@@ -1,3 +1,4 @@
+import Concatenation
 import Errors
 import Foundation
 import Primitives

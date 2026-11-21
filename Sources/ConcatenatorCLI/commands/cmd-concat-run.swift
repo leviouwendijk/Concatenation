@@ -1,6 +1,7 @@
 import Arguments
 import Clipboard
 import Concatenation
+import ConcatenationLegacy
 import Foundation
 import IO
 

@@ -1,3 +1,4 @@
+import Concatenation
 import Foundation
 import Path
 import PathParsing
@@ -244,46 +245,6 @@ enum ConAnyPathPorting {
             base,
             relativeTo: baseDirectory
         )
-    }
-
-    static func applyStaticIgnoreDefaults(
-        to urls: [URL]
-    ) throws -> [URL] {
-        let regexes = try compilePatterns(
-            StaticIgnoreDefaults.allPatterns
-        )
-
-        return urls.filter {
-            !matchesAny(regexes, url: $0)
-        }
-    }
-
-    static func applyIgnoreMap(
-        _ ignoreMap: IgnoreMap?,
-        to urls: [URL]
-    ) -> [URL] {
-        guard let ignoreMap else {
-            return urls
-        }
-
-        return urls.filter {
-            !ignoreMap.shouldIgnore($0)
-        }
-    }
-
-    static func deduplicated(
-        _ urls: [URL]
-    ) -> [URL] {
-        var out: [URL] = []
-        var seen: Set<URL> = []
-
-        for url in urls.map(\.standardizedFileURL) {
-            if seen.insert(url).inserted {
-                out.append(url)
-            }
-        }
-
-        return out
     }
 
     static func deduplicated(

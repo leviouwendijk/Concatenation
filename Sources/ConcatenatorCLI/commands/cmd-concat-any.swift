@@ -1,5 +1,6 @@
 import Arguments
 import Concatenation
+import ConcatenationLegacy
 import Foundation
 
 enum ConcatAnyCommand: ArgumentCommand {
@@ -106,14 +107,14 @@ enum ConcatAnyRunCommand: RunnableArgumentCommand {
             "verbose"
         )
 
-        let execution = try ConAnyExecution(
-            configURL: configURL,
+        let execution = try ConcatenationExecution(
+            conAnyAt: configURL,
+            ignoreMap: ignoreMap,
             options: .init(
                 maxDepth: options.allSubdirectories
                     ? nil
                     : options.depth,
                 includeDotfiles: options.includeDotFiles,
-                ignoreMap: ignoreMap,
                 delimiterStyle: options.delimiterStyle,
                 delimiterClosure: options.delimiterClosure,
                 maxLinesPerFile: options.limit(),
@@ -135,7 +136,7 @@ enum ConcatAnyRunCommand: RunnableArgumentCommand {
             || options.verboseOutput
 
         let configuredOutputCount =
-            execution.configuration.renderables.count
+            execution.definition.outputs.count
 
         let status = makeConcatenationRunStatus(
             identity: identity,
@@ -145,7 +146,7 @@ enum ConcatAnyRunCommand: RunnableArgumentCommand {
 
         await status?.start()
 
-        let result: ConAnyWriteBatchResult
+        let result: ConcatenationWriteBatchResult
 
         do {
             result = try await execution.write()
@@ -292,7 +293,7 @@ func conAnyIgnoreMap(
 }
 
 func printContextIndexAction(
-    _ action: ConAnyContextIndexAction
+    _ action: ConcatenationContextIndexAction
 ) {
     switch action {
     case .none:

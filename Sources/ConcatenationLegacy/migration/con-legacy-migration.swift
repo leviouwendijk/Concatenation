@@ -1,3 +1,4 @@
+import Concatenation
 public enum ConLegacyMigration {
     public static func rewrite(
         _ legacyText: String

@@ -1,3 +1,4 @@
+import Concatenation
 public enum ConInclude: Sendable, Codable, Equatable {
     case path(String)
     case partition(String)

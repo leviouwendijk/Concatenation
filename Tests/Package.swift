@@ -29,6 +29,7 @@ let package = Package(
             name: "ConcatenationTestFlows",
             dependencies: [
                 .product(name: "Concatenation", package: "Concatenation"),
+                .product(name: "ConcatenationLegacy", package: "Concatenation"),
                 .product(name: "ConcatenationServiceTransport", package: "Concatenation"),
                 .product(name: "Position", package: "Position"),
                 .product(name: "Path", package: "Path"),

@@ -1,6 +1,7 @@
 import Arguments
 import Clipboard
 import Concatenation
+import ConcatenationLegacy
 
 enum ConcatAnyCopyCommand:
     RunnableArgumentCommand
@@ -68,8 +69,9 @@ enum ConcatAnyCopyCommand:
             "verbose"
         )
 
-        let execution = try ConAnyExecution(
-            configURL: configURL,
+        let execution = try ConcatenationExecution(
+            conAnyAt: configURL,
+            ignoreMap: ignoreMap,
             options: .init(
                 maxDepth: try invocation.value(
                     "depth",
@@ -78,7 +80,6 @@ enum ConcatAnyCopyCommand:
                 includeDotfiles: try invocation.flag(
                     "dot"
                 ),
-                ignoreMap: ignoreMap,
                 delimiterStyle: .comment,
                 delimiterClosure: false,
                 maxLinesPerFile: nil,

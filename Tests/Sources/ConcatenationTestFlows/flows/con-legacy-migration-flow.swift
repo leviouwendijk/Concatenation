@@ -1,4 +1,5 @@
 import Concatenation
+import ConcatenationLegacy
 import TestFlows
 
 extension ConcatenationFlowSuite {
