@@ -60,7 +60,11 @@ public struct ConcatenationContext: Sendable, Codable, Equatable {
 
         let firstLine = String(multiLine[..<nlRange])
         let rest = String(multiLine[multiLine.index(after: nlRange)...])
-        let restIndented = rest.indent(spaces)
+        let prefix = String(repeating: " ", count: spaces)
+        let restIndented = rest
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { prefix + $0 }
+            .joined(separator: "\n")
 
         return firstLine + "\n" + restIndented
     }

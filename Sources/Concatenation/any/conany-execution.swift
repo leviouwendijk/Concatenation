@@ -16,9 +16,6 @@ public struct ConAnyExecutionOptions {
     public let includeSourceLineNumbers: Bool
     public let includeSourceModifiedAt: Bool
 
-    public let verboseResolution: Bool
-    public let verboseOutput: Bool
-
     public let protectSecrets: Bool
     public let allowSecrets: Bool
     public let failOnBlockedFiles: Bool
@@ -35,8 +32,6 @@ public struct ConAnyExecutionOptions {
         outputFormat: ConcatenationOutputFormat = .text,
         includeSourceLineNumbers: Bool = false,
         includeSourceModifiedAt: Bool = false,
-        verboseResolution: Bool = false,
-        verboseOutput: Bool = false,
         protectSecrets: Bool = true,
         allowSecrets: Bool = false,
         failOnBlockedFiles: Bool = false,
@@ -54,8 +49,6 @@ public struct ConAnyExecutionOptions {
         self.includeSourceLineNumbers = includeSourceLineNumbers
         self.includeSourceModifiedAt = includeSourceModifiedAt
 
-        self.verboseResolution = verboseResolution
-        self.verboseOutput = verboseOutput
 
         self.protectSecrets = protectSecrets
         self.allowSecrets = allowSecrets
@@ -73,25 +66,30 @@ public struct ConAnyResolvedOutput {
     public let plan:
         ConcatenationPlan
 
+    /// What the path scan reported while resolving this output's includes.
+    public let scanWarnings:
+        [SelectionScanWarning]
+
     public init(
         renderable: ConAnyRenderableObject,
         outputURL: URL,
-        plan: ConcatenationPlan
+        plan: ConcatenationPlan,
+        scanWarnings: [SelectionScanWarning] = []
     ) {
-        self.renderable =
-            renderable
-
-        self.outputURL =
-            outputURL.standardizedFileURL
-
-        self.plan =
-            plan
+        self.init(
+            renderable: renderable,
+            standardizedOutputURL:
+                outputURL.standardizedFileURL,
+            plan: plan,
+            scanWarnings: scanWarnings
+        )
     }
 
     init(
         renderable: ConAnyRenderableObject,
         standardizedOutputURL outputURL: URL,
-        plan: ConcatenationPlan
+        plan: ConcatenationPlan,
+        scanWarnings: [SelectionScanWarning]
     ) {
         self.renderable =
             renderable
@@ -101,6 +99,9 @@ public struct ConAnyResolvedOutput {
 
         self.plan =
             plan
+
+        self.scanWarnings =
+            scanWarnings
     }
 
     public var sources:
@@ -695,8 +696,7 @@ public struct ConAnyExecution: SafelyConcatenatable {
             configuration.renderables,
             maxDepth: options.maxDepth,
             includeDotfiles: options.includeDotfiles,
-            ignoreMap: options.ignoreMap,
-            verbose: options.verboseResolution
+            ignoreMap: options.ignoreMap
         )
 
         precondition(
@@ -807,7 +807,9 @@ public struct ConAnyExecution: SafelyConcatenatable {
                     standardizedOutputURL:
                         outputPlan[index],
                     plan:
-                        plan
+                        plan,
+                    scanWarnings:
+                        resolved.warnings
                 )
             )
         }
@@ -1173,16 +1175,6 @@ private extension ConAnyExecution {
                 workspace,
             cache:
                 cache,
-
-            verbose:
-                options.verboseOutput,
-            reportWarnings:
-                false,
-
-            location:
-                outputURL.map {
-                    "con any block '\(resolved.name)' → \($0.path)"
-                },
 
             protectSecrets:
                 options.protectSecrets,

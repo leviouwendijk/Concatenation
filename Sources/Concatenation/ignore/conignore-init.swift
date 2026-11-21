@@ -43,8 +43,4 @@ public struct ConignoreInitializer {
                 : .init()
         )
     }
-
-    public func printGuide() {
-        print(conignoreGuide())
-    }
 }

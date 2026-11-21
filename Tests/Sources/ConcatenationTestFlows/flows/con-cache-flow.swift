@@ -2293,8 +2293,10 @@ extension ConcatenationFlowSuite {
                     "cache.safeguard-first-safe"
                 )
 
-                let sentinelReason =
-                    "__cached_deep_safeguard_reused__"
+                let sentinelSignal =
+                    ConcatenationSecretSignal.secretJSONKey(
+                        "__cached_deep_safeguard_reused__"
+                    )
 
                 try fixture.store.save(
                     .init(
@@ -2305,8 +2307,7 @@ extension ConcatenationFlowSuite {
                                 metadata: cachedSafeguard.metadata,
                                 policyFingerprint:
                                     cachedSafeguard.policyFingerprint,
-                                matched: true,
-                                reason: sentinelReason
+                                signal: sentinelSignal
                             ),
                         ],
                         artifact: firstManifest.artifact
@@ -2333,8 +2334,11 @@ extension ConcatenationFlowSuite {
                 )
 
                 try Expect.equal(
-                    warning.message,
-                    sentinelReason,
+                    warning,
+                    .blocked(
+                        warning.file,
+                        signal: sentinelSignal
+                    ),
                     "cache.safeguard-reused-reason"
                 )
 

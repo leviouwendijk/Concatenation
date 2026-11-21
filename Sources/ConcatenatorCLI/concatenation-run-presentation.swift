@@ -830,28 +830,31 @@ func printConAnyRunSummary(
 func printConcatenationWarnings(
     _ warnings: [ConcatenationWarning]
 ) {
-    let blocked =
-        warnings.filter {
-            $0.kind == .blockedByPolicy
+    var blockedCount = 0
+
+    for warning in warnings {
+        guard case .blocked(let file, let signal) = warning else {
+            continue
         }
 
-    if !blocked.isEmpty {
-        for warning in blocked {
-            print(
-                "Excluding protected file:"
-            )
+        blockedCount += 1
 
-            print(
-                "    file:     \(warning.file.path)"
-            )
+        print(
+            "Excluding protected file:"
+        )
 
-            print(
-                "    reason:   \(warning.message)"
-            )
+        print(
+            "    file:     \(file.path)"
+        )
 
-            print()
-        }
+        print(
+            "    reason:   \(ConcatenationWarningText.reason(signal))"
+        )
 
+        print()
+    }
+
+    if blockedCount > 0 {
         print(
             "    Use --allow-secrets to override"
         )
@@ -859,14 +862,50 @@ func printConcatenationWarnings(
         print()
     }
 
-    for warning in warnings
-        where warning.kind == .truncated
-    {
+    for warning in warnings {
+        guard case .truncated(_, let kept, let total) = warning else {
+            continue
+        }
+
         print(
-            warning.message.ansi(
-                .yellow
+            ConcatenationWarningText.truncation(
+                keptLineCount: kept,
+                totalLineCount: total
             )
+                .ansi(
+                    .yellow
+                )
         )
+    }
+}
+
+/// Lists, per output, the files a `.conany` block resolved to and what the
+/// path scan warned about. `--verbose` resolution detail.
+func printConAnyResolution(
+    _ outputs: [ConAnyResolvedOutput]
+) {
+    for output in outputs {
+        print(
+            "output: \(output.outputURL.path)"
+        )
+
+        for source in output.sources {
+            print(
+                "  match: \(source.file.path)"
+            )
+
+            if !source.selections.isEmpty {
+                print(
+                    "    selections: \(source.selections)"
+                )
+            }
+        }
+
+        for warning in output.scanWarnings {
+            print(
+                "  scan warning: \(warning)"
+            )
+        }
     }
 }
 

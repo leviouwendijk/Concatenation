@@ -32,7 +32,7 @@ enum IgnoreCommand: RunnableArgumentCommand {
         let initializer = ConignoreInitializer()
 
         if try invocation.flag("help") {
-            initializer.printGuide()
+            print(conignoreGuide())
             return
         }
 

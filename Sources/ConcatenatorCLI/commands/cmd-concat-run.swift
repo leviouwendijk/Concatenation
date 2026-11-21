@@ -151,8 +151,6 @@ func runDefaultConcatenation(
                     finalMap.obscureValues,
                 requiresRenderedText:
                     options.copyToClipboard,
-                verbose: false,
-                reportWarnings: false,
                 allowSecrets:
                     options.allowSecrets,
                 deepSecretInspection:

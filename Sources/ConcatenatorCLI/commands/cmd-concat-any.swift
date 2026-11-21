@@ -121,8 +121,6 @@ enum ConcatAnyRunCommand: RunnableArgumentCommand {
                 outputFormat: options.outputFormat,
                 includeSourceLineNumbers: options.includeSourceLineNumbers,
                 includeSourceModifiedAt: options.includeSourceModifiedAt,
-                verboseResolution: verboseResolution,
-                verboseOutput: options.verboseOutput,
                 protectSecrets: true,
                 allowSecrets: options.allowSecrets,
                 failOnBlockedFiles: false,
@@ -161,6 +159,13 @@ enum ConcatAnyRunCommand: RunnableArgumentCommand {
         for skipped in result.skipped {
             print(
                 "No files matched block → \(skipped.name)"
+            )
+        }
+
+        if verboseResolution {
+            printConAnyResolution(
+                result.outputs.map(\.resolved)
+                    + result.skipped
             )
         }
 

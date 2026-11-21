@@ -54,10 +54,12 @@ public extension SafelyConcatenatable {
         return false
     }
 
+    /// Peeks at the first bytes of `url` and returns what looks like secret
+    /// material, or `nil` when nothing matched (or the file can't be read).
     static func deepSecretCheck(
         _ url: URL,
         maxPeek: Int = ConSafeguard.deepPeekBytes
-    ) -> (matched: Bool, reason: String?) {
+    ) -> ConcatenationSecretSignal? {
         do {
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
             let peek = data.prefix(maxPeek)
@@ -65,10 +67,12 @@ public extension SafelyConcatenatable {
             if ConSafeguard.treatNullByteAsBinary {
                 if peek.contains(0) {
                     let ext = url.pathExtension.lowercased()
-                    if ConSafeguard.protectedExtensions.contains(ext) || ext == "p12" || ext == "jks" {
-                        return (true, "binary file contains NUL bytes (likely keystore / PKCS12/JKS)")
-                    }
-                    return (true, "binary file contains NUL bytes")
+                    return .nullBytes(
+                        keystoreExtension:
+                            ConSafeguard.protectedExtensions.contains(ext)
+                            || ext == "p12"
+                            || ext == "jks"
+                    )
                 }
             }
 
@@ -82,32 +86,31 @@ public extension SafelyConcatenatable {
             if let txt = text {
                 for marker in ConSafeguard.pemMarkers {
                     if txt.contains(marker) {
-                        return (true, "detected PEM/OPENSSH marker '\(marker.trimmingCharacters(in: .whitespaces))'")
+                        return .pemMarker(
+                            marker.trimmingCharacters(in: .whitespaces)
+                        )
                     }
                 }
 
                 if txt.contains("-----begin openssh private key-----") {
-                    return (true, "detected OpenSSH private key")
+                    return .openSSHPrivateKey
                 }
 
                 if txt.contains("ssh-rsa") || txt.contains("ssh-ed25519") {
-                    return (true, "detected SSH key marker (ssh-rsa / ssh-ed25519)")
+                    return .sshKeyMarker
                 }
 
                 for token in ConSafeguard.privateKeyJsonTokens {
                     if txt.contains(token) {
-                        return (true, "detected JSON secret-like key \(token)")
-                     }
-                 }
-        
-                if txt.contains("{") && txt.contains(":") {
-                    // If we see both a likely secret key and a PEM header, be explicit
-                    if txt.contains("-----begin ") && (ConSafeguard.privateKeyJsonTokens.contains { txt.contains($0) }) {
-                        return (true, "detected PEM + JSON secret indicators")
+                        return .secretJSONKey(token)
                     }
                 }
 
-                // additional heuristics: pkcs8 base64 blocks (BEGIN ... PRIVATE KEY) already covered by pemMarkers
+                if txt.contains("{") && txt.contains(":") {
+                    if txt.contains("-----begin ") && (ConSafeguard.privateKeyJsonTokens.contains { txt.contains($0) }) {
+                        return .pemWithSecretJSON
+                    }
+                }
             }
 
             if let s = String(data: peek, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
@@ -115,22 +118,13 @@ public extension SafelyConcatenatable {
                 let base64Chars = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
                 let isBase64Like = first.count >= 80 && first.rangeOfCharacter(from: base64Chars.inverted) == nil
                 if isBase64Like {
-                    return (true, "detected long base64-like token (possible key material)")
+                    return .base64Token
                 }
             }
 
-            return (false, nil)
+            return nil
         } catch {
-            return (false, nil)
+            return nil
         }
-    }
-
-    func printProtectionNotifier(file: String, reason: String) {
-        let strFile = "file:     \(file)"
-        let strReason = "reason:   \(reason)"
-        print("Excluding protected file:")
-        print(strFile.indent())
-        print(strReason.indent())
-        print()
     }
 }

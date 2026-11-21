@@ -71,8 +71,8 @@ public struct ConcatenationXMLRenderer: Sendable {
             lines.append("    <warnings>")
 
             for warning in document.warnings {
-                lines.append("        <warning kind=\"\(xml(warning.kind.rawValue))\" file=\"\(xml(warning.file.path))\">")
-                lines.append("            <message>\(xml(warning.message))</message>")
+                lines.append("        <warning kind=\"\(xml(ConcatenationWarningText.kind(warning)))\" file=\"\(xml(warning.file.path))\">")
+                lines.append("            <message>\(xml(ConcatenationWarningText.message(warning)))</message>")
                 lines.append("        </warning>")
             }
 

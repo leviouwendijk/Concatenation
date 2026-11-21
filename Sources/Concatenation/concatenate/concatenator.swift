@@ -1,8 +1,6 @@
 import Errors
 import Foundation
 import IO
-import Terminal
-import Indentation
 import Primitives
 import Path
 import Position
@@ -25,10 +23,6 @@ public struct FileConcatenator: SafelyConcatenatable {
     /// The caller needs the rendered text, so `write` always renders and
     /// returns it in `renderResult` instead of reusing an unchanged artifact.
     public let requiresRenderedText: Bool
-    public let verbose: Bool
-    public let reportWarnings: Bool
-
-    public let location: String?
 
     public let protectSecrets: Bool
     public let allowSecrets: Bool
@@ -136,10 +130,6 @@ public struct FileConcatenator: SafelyConcatenatable {
         cache: ConcatenationCacheBinding? = nil,
 
         requiresRenderedText: Bool = false,
-        verbose: Bool = false,
-        reportWarnings: Bool = true,
-
-        location: String? = nil,
 
         protectSecrets: Bool = true,
         allowSecrets: Bool = false,
@@ -181,15 +171,6 @@ public struct FileConcatenator: SafelyConcatenatable {
 
         self.requiresRenderedText =
             requiresRenderedText
-
-        self.verbose =
-            verbose
-
-        self.reportWarnings =
-            reportWarnings
-
-        self.location =
-            location
 
         self.protectSecrets =
             protectSecrets
@@ -249,10 +230,6 @@ public struct FileConcatenator: SafelyConcatenatable {
         obscureMap: [String: String] = [:],
 
         requiresRenderedText: Bool = false,
-        verbose: Bool = false,
-        reportWarnings: Bool = true,
-
-        location: String? = nil,
 
         protectSecrets: Bool = true,
         allowSecrets: Bool = false,
@@ -366,12 +343,6 @@ public struct FileConcatenator: SafelyConcatenatable {
                 cache,
             requiresRenderedText:
                 requiresRenderedText,
-            verbose:
-                verbose,
-            reportWarnings:
-                reportWarnings,
-            location:
-                location,
             protectSecrets:
                 protectSecrets,
             allowSecrets:
@@ -671,13 +642,10 @@ public struct FileConcatenator: SafelyConcatenatable {
                 if isProtectedFile(fileURL) {
                     blockedFileCount += 1
 
-                    let reason = "Detected filename/extension matching secret patterns."
-
                     warnings.append(
-                        .init(
-                            kind: .blockedByPolicy,
-                            file: fileURL,
-                            message: reason
+                        .blocked(
+                            fileURL,
+                            signal: .protectedFileName
                         )
                     )
 
@@ -685,7 +653,7 @@ public struct FileConcatenator: SafelyConcatenatable {
                         errors.append(
                             ConcatError.fileBlockedByPolicy(
                                 url: fileURL,
-                                reason: reason
+                                signal: .protectedFileName
                             )
                         )
                     }
@@ -768,16 +736,13 @@ public struct FileConcatenator: SafelyConcatenatable {
                     } else {
                         safeguardReads += 1
 
-                        let result = Self.deepSecretCheck(
-                            resolved
-                        )
-
                         safeguard = .init(
                             metadata: metadata,
                             policyFingerprint:
                                 deepSafeguardPolicyFingerprint,
-                            matched: result.matched,
-                            reason: result.reason
+                            signal: Self.deepSecretCheck(
+                                resolved
+                            )
                         )
                     }
 
@@ -789,17 +754,13 @@ public struct FileConcatenator: SafelyConcatenatable {
                         safeguard
                     )
 
-                    if safeguard.matched {
+                    if let signal = safeguard.signal {
                         blockedFileCount += 1
 
-                        let reason = safeguard.reason
-                            ?? "deep-secret heuristic matched"
-
                         warnings.append(
-                            .init(
-                                kind: .blockedByPolicy,
-                                file: fileURL,
-                                message: reason
+                            .blocked(
+                                fileURL,
+                                signal: signal
                             )
                         )
 
@@ -807,7 +768,7 @@ public struct FileConcatenator: SafelyConcatenatable {
                             errors.append(
                                 ConcatError.fileBlockedByPolicy(
                                     url: fileURL,
-                                    reason: reason
+                                    signal: signal
                                 )
                             )
                         }
@@ -996,13 +957,14 @@ public struct FileConcatenator: SafelyConcatenatable {
                 }
 
                 if materializeSections {
-                    if section.wasTruncated,
-                       let message = section.truncationMessage {
+                    if section.wasTruncated {
                         warnings.append(
-                            .init(
-                                kind: .truncated,
-                                file: resolved,
-                                message: message
+                            .truncated(
+                                resolved,
+                                keptLineCount:
+                                    section.keptLineCount,
+                                totalLineCount:
+                                    section.totalLineCount
                             )
                         )
                     }
@@ -1155,30 +1117,7 @@ public struct FileConcatenator: SafelyConcatenatable {
             throw ConcatError.outputRequired
         }
 
-        if verbose {
-            if let location {
-                print("Concatenation location: \(location)")
-            }
-
-            print(
-                "Concatenating \(plan.sources.count) files → \(outputURL.path)"
-            )
-        }
-
-        let preparedDocument: ConcatenationDocument
-
-        do {
-            preparedDocument = try self.document()
-        } catch {
-            printErrors(for: error)
-            throw error
-        }
-
-        if reportWarnings {
-            printWarnings(
-                from: preparedDocument
-            )
-        }
+        let preparedDocument = try self.document()
 
         let materialFingerprint = try artifactMaterialFingerprint(
             for: preparedDocument
@@ -1188,12 +1127,6 @@ public struct FileConcatenator: SafelyConcatenatable {
            try validatedCachedArtifact(
                 materialFingerprint: materialFingerprint
            ) != nil {
-            if verbose {
-                print(
-                    "Unchanged: \(outputURL.path)"
-                )
-            }
-
             return ConcatenationWriteResult(
                 document: preparedDocument,
                 renderResult: nil,
@@ -1217,12 +1150,6 @@ public struct FileConcatenator: SafelyConcatenatable {
             document: preparedDocument
         )
 
-        if verbose {
-            print(
-                "Done: \(preparedDocument.statistics.selectedLineCount) lines written"
-            )
-        }
-
         return ConcatenationWriteResult(
             document: preparedDocument,
             renderResult: rendered,
@@ -1243,26 +1170,9 @@ public struct FileConcatenator: SafelyConcatenatable {
         let startedAt =
             Date()
 
-        if verbose {
-            if let location {
-                print("Concatenation location: \(location)")
-            }
-
-            print(
-                "Concatenating \(plan.sources.count) files → \(outputURL.path)"
-            )
-        }
-
-        let preflight: ConcatenationPreparationPreflight
-
-        do {
-            preflight = try await preparationPreflight(
-                concurrency: concurrency
-            )
-        } catch {
-            printErrors(for: error)
-            throw error
-        }
+        let preflight = try await preparationPreflight(
+            concurrency: concurrency
+        )
 
         let reuseValidationStartedAt =
             Date()
@@ -1332,18 +1242,6 @@ public struct FileConcatenator: SafelyConcatenatable {
                         cachePersistenceStartedAt
                     )
 
-                if reportWarnings {
-                    printWarnings(
-                        from: fastCandidate.summary.warnings
-                    )
-                }
-
-                if verbose {
-                    print(
-                        "Unchanged: \(outputURL.path)"
-                    )
-                }
-
                 return ConcatenationWriteResult(
                     documentStatistics:
                         fastCandidate.statistics,
@@ -1367,29 +1265,16 @@ public struct FileConcatenator: SafelyConcatenatable {
             }
         }
 
-        let preparation: ConcatenationPreparedDocument
-
-        do {
-            preparation = try await prepareDocument(
-                preflight: preflight,
-                concurrency: concurrency,
-                persistCache: false,
-                reuseValidationDuration:
-                    reuseValidationDuration
-            )
-        } catch {
-            printErrors(for: error)
-            throw error
-        }
+        let preparation = try await prepareDocument(
+            preflight: preflight,
+            concurrency: concurrency,
+            persistCache: false,
+            reuseValidationDuration:
+                reuseValidationDuration
+        )
 
         let preparedDocument =
             preparation.document
-
-        if reportWarnings {
-            printWarnings(
-                from: preparedDocument
-            )
-        }
 
         let artifactFingerprintStartedAt =
             Date()
@@ -1455,12 +1340,6 @@ public struct FileConcatenator: SafelyConcatenatable {
                 Date().timeIntervalSince(
                     cachePersistenceStartedAt
                 )
-
-            if verbose {
-                print(
-                    "Unchanged: \(outputURL.path)"
-                )
-            }
 
             return ConcatenationWriteResult(
                 document: preparedDocument,
@@ -1540,12 +1419,6 @@ public struct FileConcatenator: SafelyConcatenatable {
             Date().timeIntervalSince(
                 cachePersistenceStartedAt
             )
-
-        if verbose {
-            print(
-                "Done: \(preparedDocument.statistics.selectedLineCount) lines written"
-            )
-        }
 
         return ConcatenationWriteResult(
             document: preparedDocument,
@@ -1704,7 +1577,7 @@ private struct ConcatenationArtifactMaterial:
     let includeSourceModifiedAt: Bool
     let obscurations: [String: String]
     let context: ConcatenationContext?
-    let warnings: [ConcatenationArtifactWarning]
+    let warnings: [ConcatenationWarning]
     let statistics: ConcatenationArtifactStatistics
     let sourceMaterialFingerprint: ContentFingerprint
 }
@@ -1721,14 +1594,6 @@ private struct ConcatenationSourceMaterialIdentity:
 {
     let contentFingerprint: ContentFingerprint
     let transformationFingerprint: ContentFingerprint
-}
-
-private struct ConcatenationArtifactWarning:
-    Encodable
-{
-    let kind: String
-    let file: String
-    let message: String
 }
 
 private struct ConcatenationArtifactStatistics:
@@ -1920,73 +1785,6 @@ private extension FileConcatenator {
         ).slices
     }
 
-    func printWarnings(
-        from document: ConcatenationDocument
-    ) {
-        printWarnings(
-            from: document.warnings
-        )
-    }
-
-    func printWarnings(
-        from warnings: [ConcatenationWarning]
-    ) {
-        let blockedWarnings = warnings.filter {
-            $0.kind == .blockedByPolicy
-        }
-
-        if !blockedWarnings.isEmpty {
-            for warning in blockedWarnings {
-                printProtectionNotifier(
-                    file: warning.file.path,
-                    reason: warning.message
-                )
-            }
-
-            print("Use --allow-secrets to override".indent())
-            print()
-        }
-
-        let truncatedWarnings = warnings.filter {
-            $0.kind == .truncated
-        }
-
-        for warning in truncatedWarnings {
-            print(
-                warning.message.ansi(.yellow)
-            )
-        }
-    }
-
-    func printErrors(
-        for error: Error
-    ) {
-        let errors: [Error]
-
-        if let multi = error as? Errors {
-            errors = multi.errors
-        } else {
-            errors = [error]
-        }
-
-        guard !errors.isEmpty else {
-            return
-        }
-
-        print(
-            "\nErrors encountered during concatenation"
-                + (location.map { " — \($0)" } ?? "")
-        )
-
-        for error in errors {
-            if let concatError = error as? ConcatError {
-                print(" • \(concatError.localizedDescription)")
-            } else {
-                print(" • \(error.localizedDescription)")
-            }
-        }
-    }
-
     func preinspectSafeguards(
         preinspected: [
             URL: FileMetadataSnapshot
@@ -2077,15 +1875,12 @@ private extension FileConcatenator {
         ).map(
             jobs
         ) { metadata in
-            let result = Self.deepSecretCheck(
-                metadata.url
-            )
-
-            return ConcatenationCachedSafeguard(
+            ConcatenationCachedSafeguard(
                 metadata: metadata,
                 policyFingerprint: policyFingerprint,
-                matched: result.matched,
-                reason: result.reason
+                signal: Self.deepSecretCheck(
+                    metadata.url
+                )
             )
         }
 
@@ -2180,11 +1975,9 @@ private extension FileConcatenator {
             {
                 blockedFileCount += 1
                 currentBlockedWarnings.append(
-                    .init(
-                        kind: .blockedByPolicy,
-                        file: file,
-                        message:
-                            "Detected filename/extension matching secret patterns."
+                    .blocked(
+                        file,
+                        signal: .protectedFileName
                     )
                 )
                 continue
@@ -2226,15 +2019,12 @@ private extension FileConcatenator {
                     safeguardReads += 1
                 }
 
-                if current.matched {
+                if let signal = current.signal {
                     blockedFileCount += 1
                     currentBlockedWarnings.append(
-                        .init(
-                            kind: .blockedByPolicy,
-                            file: file,
-                            message:
-                                current.reason
-                                ?? "deep-secret heuristic matched"
+                        .blocked(
+                            file,
+                            signal: signal
                         )
                     )
                     continue
@@ -2278,9 +2068,9 @@ private extension FileConcatenator {
         }
 
         let cachedBlockedWarnings =
-            summary.warnings.filter {
-                $0.kind == .blockedByPolicy
-            }
+            summary.warnings.filter(
+                \.isBlocked
+            )
 
         guard cachedSourceIndex
                 == manifest.sources.count,
@@ -2752,8 +2542,7 @@ private extension FileConcatenator {
             guard previous.metadata == current.metadata,
                   previous.policyFingerprint
                     == current.policyFingerprint,
-                  previous.matched == current.matched,
-                  previous.reason == current.reason else {
+                  previous.signal == current.signal else {
                 return false
             }
         }
@@ -2895,13 +2684,7 @@ private extension FileConcatenator {
             includeSourceModifiedAt: options.output.modifiedstamp,
             obscurations: options.output.obscurations,
             context: context,
-            warnings: summary.warnings.map {
-                .init(
-                    kind: $0.kind.rawValue,
-                    file: $0.file.standardizedFileURL.path,
-                    message: $0.message
-                )
-            },
+            warnings: summary.warnings,
             statistics: .init(
                 sourceCount:
                     summary.sourceCount,

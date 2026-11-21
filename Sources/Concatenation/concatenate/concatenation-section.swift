@@ -59,6 +59,9 @@ public struct ConcatenationSection: Sendable, Codable {
             return nil
         }
 
-        return "(!): truncated — file exceeded max line limit (\(keptLineCount)/\(totalLineCount) lines)"
+        return ConcatenationWarningText.truncation(
+            keptLineCount: keptLineCount,
+            totalLineCount: totalLineCount
+        )
     }
 }

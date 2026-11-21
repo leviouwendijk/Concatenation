@@ -5,7 +5,7 @@ public struct ConcatenationCacheManifest:
     Sendable,
     Codable
 {
-    public static let currentVersion = 3
+    public static let currentVersion = 4
 
     public let version: Int
     public let output: URL
@@ -70,19 +70,20 @@ public struct ConcatenationCachedSafeguard:
 {
     public let metadata: FileMetadataSnapshot
     public let policyFingerprint: ContentFingerprint
-    public let matched: Bool
-    public let reason: String?
+    public let signal: ConcatenationSecretSignal?
 
     public init(
         metadata: FileMetadataSnapshot,
         policyFingerprint: ContentFingerprint,
-        matched: Bool,
-        reason: String?
+        signal: ConcatenationSecretSignal?
     ) {
         self.metadata = metadata
         self.policyFingerprint = policyFingerprint
-        self.matched = matched
-        self.reason = reason
+        self.signal = signal
+    }
+
+    public var matched: Bool {
+        signal != nil
     }
 
     public var file: URL {

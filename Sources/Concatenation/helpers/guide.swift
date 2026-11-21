@@ -57,9 +57,3 @@ public func conignoreGuide() -> String {
     """
 
 }
-
-public func printConignoreGuide() {
-    print(
-        conignoreGuide()
-    )
-}

@@ -17,12 +17,15 @@ public enum ConAnyResolveError: Error, LocalizedError {
 public struct ConAnyResolverResult: Sendable {
     public let matches: [SelectionScanMatch]
     public let plannedTraversalRoots: [URL]
+    public let warnings: [SelectionScanWarning]
 
     public init(
         matches: [SelectionScanMatch],
-        plannedTraversalRoots: [URL]
+        plannedTraversalRoots: [URL],
+        warnings: [SelectionScanWarning] = []
     ) {
         self.matches = matches
+        self.warnings = warnings
         self.plannedTraversalRoots = plannedTraversalRoots.map(
             \.standardizedFileURL
         )
@@ -128,15 +131,8 @@ public struct ConAnyResolver {
         _ renderables: [ConAnyRenderableObject],
         maxDepth: Int? = nil,
         includeDotfiles: Bool = false,
-        ignoreMap: IgnoreMap? = nil,
-        verbose: Bool = false
+        ignoreMap: IgnoreMap? = nil
     ) throws -> ConAnyResolverBatchResult {
-        if verbose {
-            print(
-                "ConAny resolving \(renderables.count) outputs in \(baseDirectory.path)"
-            )
-        }
-
         let startedAt = Date()
 
         let specificationStartedAt = Date()
@@ -210,31 +206,7 @@ public struct ConAnyResolver {
         )
 
         for index in renderables.indices {
-            let renderable = renderables[index]
             let result = batch.results[index]
-
-            if verbose {
-                print(
-                    "output: \(renderable.output)"
-                )
-
-                for match in result.matches {
-                    print(
-                        "match: \(match.url.path)"
-                    )
-
-                    print(
-                        "  selections: \(match.contentSelections)"
-                    )
-                }
-            }
-
-            if verbose,
-               !result.warnings.isEmpty {
-                print(
-                    "SelectionScan warnings: \(result.warnings)"
-                )
-            }
 
             let filteringStartedAt = Date()
 
@@ -255,7 +227,9 @@ public struct ConAnyResolver {
                     matches: matches,
                     plannedTraversalRoots:
                         plans[index]
-                        .traversalRoots
+                        .traversalRoots,
+                    warnings:
+                        result.warnings
                 )
             )
         }
@@ -303,15 +277,13 @@ public struct ConAnyResolver {
         _ renderable: ConAnyRenderableObject,
         maxDepth: Int? = nil,
         includeDotfiles: Bool = false,
-        ignoreMap: IgnoreMap? = nil,
-        verbose: Bool = false
+        ignoreMap: IgnoreMap? = nil
     ) throws -> ConAnyResolverResult {
         let batch = try resolveResults(
             [renderable],
             maxDepth: maxDepth,
             includeDotfiles: includeDotfiles,
-            ignoreMap: ignoreMap,
-            verbose: verbose
+            ignoreMap: ignoreMap
         )
 
         return batch.results[0]
@@ -400,15 +372,13 @@ public struct ConAnyResolver {
         _ renderable: ConAnyRenderableObject,
         maxDepth: Int? = nil,
         includeDotfiles: Bool = false,
-        ignoreMap: IgnoreMap? = nil,
-        verbose: Bool = false
+        ignoreMap: IgnoreMap? = nil
     ) throws -> [SelectionScanMatch] {
         try resolveResult(
             renderable,
             maxDepth: maxDepth,
             includeDotfiles: includeDotfiles,
-            ignoreMap: ignoreMap,
-            verbose: verbose
+            ignoreMap: ignoreMap
         ).matches
     }
 
@@ -416,15 +386,13 @@ public struct ConAnyResolver {
         _ renderable: ConAnyRenderableObject,
         maxDepth: Int? = nil,
         includeDotfiles: Bool = false,
-        ignoreMap: IgnoreMap? = nil,
-        verbose: Bool = false
+        ignoreMap: IgnoreMap? = nil
     ) throws -> [URL] {
         try resolveMatches(
             renderable,
             maxDepth: maxDepth,
             includeDotfiles: includeDotfiles,
-            ignoreMap: ignoreMap,
-            verbose: verbose
+            ignoreMap: ignoreMap
         ).map(\.url)
     }
 

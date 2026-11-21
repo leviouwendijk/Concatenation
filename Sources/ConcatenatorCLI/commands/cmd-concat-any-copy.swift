@@ -86,8 +86,6 @@ enum ConcatAnyCopyCommand:
                 outputFormat: .text,
                 includeSourceLineNumbers: true,
                 includeSourceModifiedAt: false,
-                verboseResolution: verbose,
-                verboseOutput: verbose,
                 protectSecrets: true,
                 allowSecrets: try invocation.flag(
                     "allow-secrets"
@@ -106,6 +104,11 @@ enum ConcatAnyCopyCommand:
         result.combinedText.clipboard()
 
         if verbose {
+            printConAnyResolution(
+                result.outputs.map(\.resolved)
+                    + result.skipped
+            )
+
             for skipped in result.skipped {
                 print(
                     "No files matched block → \(skipped.name)"

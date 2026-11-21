@@ -161,7 +161,6 @@ enum ConcatCopyCommand:
             includeSourceLineNumbers: true,
             includeSourceModifiedAt: false,
             obscureMap: ignoreMap.obscureValues,
-            verbose: verbose,
             protectSecrets: true,
             allowSecrets: try invocation.flag(
                 "allow-secrets"

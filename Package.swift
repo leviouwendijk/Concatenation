@@ -41,8 +41,6 @@ let package = Package(
                 .product(name: "Primitives", package: "Primitives"),
                 .product(name: "Errors", package: "Errors"),
                 .product(name: "Strings", package: "Strings"),
-                .product(name: "Indentation", package: "Indentation"),
-                .product(name: "Terminal", package: "Terminal"),
                 .product(name: "Position", package: "Position"),
                 .product(name: "Path", package: "Path"),
                 .product(name: "PathParsing", package: "Path"),
@@ -67,6 +65,7 @@ let package = Package(
                 .target(name: "ConcatenationServiceTransport"),
                 .product(name: "Arguments", package: "Arguments"),
                 .product(name: "Clipboard", package: "Clipboard"),
+                .product(name: "Indentation", package: "Indentation"),
                 .product(name: "IO", package: "IO"),
                 .product(name: "Writers", package: "Writers"),
                 .product(name: "Terminal", package: "Terminal")
