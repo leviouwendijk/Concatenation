@@ -807,7 +807,13 @@ public struct FileConcatenator: SafelyConcatenatable {
                    let exactCachedSection {
                     metadataHits += 1
 
-                    section = exactCachedSection
+                    section = reboundCachedSection(
+                        exactCachedSection,
+                        for: source,
+                        resolved: resolved,
+                        fileManager: fileManager,
+                        metadata: metadata
+                    )
                     cachedSource = previous
                 } else {
                     sourceReads += 1
@@ -887,7 +893,13 @@ public struct FileConcatenator: SafelyConcatenatable {
                             )
                         )
 
-                        section = reusedSection
+                        section = reboundCachedSection(
+                            reusedSection,
+                            for: source,
+                            resolved: resolved,
+                            fileManager: fileManager,
+                            metadata: metadata
+                        )
                         cachedSource = .init(
                             metadata: metadata,
                             contentFingerprint: contentFingerprint,
@@ -1671,6 +1683,29 @@ private extension FileConcatenator {
                 missingFilePolicy: .throwError,
                 newlineNormalization: .unix
             )
+        )
+    }
+
+    /// A section from the shared pool, under this source's header.
+    func reboundCachedSection(
+        _ section: ConcatenationSection,
+        for source: ConcatenationSource,
+        resolved: URL,
+        fileManager: FileManager,
+        metadata: FileMetadataSnapshot
+    ) -> ConcatenationSection {
+        section.rebound(
+            file: resolved,
+            presentedPath: sectionPresentedPath(
+                for: source,
+                resolved: resolved,
+                fileManager: fileManager
+            ),
+            modifiedAt: options.output.modifiedstamp
+                ? sourceModifiedAtString(
+                    metadata.modifiedAt
+                )
+                : nil
         )
     }
 
@@ -2469,21 +2504,21 @@ private extension FileConcatenator {
     func sourceStateMatches(
         _ previous: ConcatenationCachedSource,
         metadata: FileMetadataSnapshot,
-        transformationFingerprint: ContentFingerprint
+        transformationFingerprint: ConcatenationSectionFingerprint
     ) -> Bool {
         previous.metadata == metadata
             && previous.transformationFingerprint
-                == transformationFingerprint
+                == transformationFingerprint.transformation
     }
 
     func sourceContentMatches(
         _ previous: ConcatenationCachedSource,
         contentFingerprint: ContentFingerprint,
-        transformationFingerprint: ContentFingerprint
+        transformationFingerprint: ConcatenationSectionFingerprint
     ) -> Bool {
         previous.contentFingerprint == contentFingerprint
             && previous.transformationFingerprint
-                == transformationFingerprint
+                == transformationFingerprint.transformation
     }
 
     func cacheStateMatches(
@@ -2527,7 +2562,7 @@ private extension FileConcatenator {
 
     func consumeCachedSource(
         for resolved: URL,
-        transformationFingerprint: ContentFingerprint,
+        transformationFingerprint: ConcatenationSectionFingerprint,
         from sourcesByFile: inout [
             URL: [ConcatenationCachedSource]
         ]
@@ -2541,7 +2576,7 @@ private extension FileConcatenator {
 
         let index = candidates.firstIndex {
             $0.transformationFingerprint
-                == transformationFingerprint
+                == transformationFingerprint.transformation
         } ?? candidates.startIndex
 
         let source = candidates.remove(
@@ -3002,7 +3037,7 @@ private extension FileConcatenator {
         resolved: URL,
         metadata: FileMetadataSnapshot,
         fileManager: FileManager
-    ) throws -> ContentFingerprint {
+    ) throws -> ConcatenationSectionFingerprint {
         let transformation = ConcatenationSectionTransformation(
             version: 1,
             presentedPath: sectionPresentedPath(
@@ -3038,16 +3073,23 @@ private extension FileConcatenator {
     func fingerprint(
         _ transformation:
             ConcatenationSectionTransformation
-    ) throws -> ContentFingerprint {
+    ) throws -> ConcatenationSectionFingerprint {
         let encoder = JSONEncoder()
 
         encoder.outputFormatting = [
             .sortedKeys,
         ]
 
-        return .fingerprint(
-            for: try encoder.encode(
-                transformation
+        return .init(
+            transformation: .fingerprint(
+                for: try encoder.encode(
+                    transformation
+                )
+            ),
+            body: .fingerprint(
+                for: try encoder.encode(
+                    transformation.body
+                )
             )
         )
     }

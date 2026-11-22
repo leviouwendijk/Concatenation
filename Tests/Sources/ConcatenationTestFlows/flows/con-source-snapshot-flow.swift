@@ -350,6 +350,9 @@ extension ConcatenationFlowSuite {
             ),
             transformationFingerprint: .fingerprint(
                 for: transformation
+            ),
+            bodyFingerprint: .fingerprint(
+                for: transformation
             )
         )
     }

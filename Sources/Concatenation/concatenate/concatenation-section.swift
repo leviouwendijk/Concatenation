@@ -40,6 +40,42 @@ public struct ConcatenationSection: Sendable, Codable {
         self.wasTruncated = wasTruncated
     }
 
+    /// The same body under another source's header: a section from the
+    /// shared pool may have been written for a different output, path or
+    /// copy of the same content.
+    func rebound(
+        file: URL,
+        presentedPath: String,
+        modifiedAt: String?
+    ) -> Self {
+        let file = file.standardizedFileURL
+
+        guard file != self.file
+                || presentedPath != self.presentedPath
+                || modifiedAt != self.modifiedAt
+        else {
+            return self
+        }
+
+        return .init(
+            file: file,
+            presentedPath: presentedPath,
+            modifiedAt: modifiedAt,
+            slices: slices.map {
+                FileLineSlice(
+                    file: file,
+                    startLine: $0.startLine,
+                    lines: $0.lines
+                )
+            },
+            blankLineHeader: blankLineHeader,
+            blankLineFooter: blankLineFooter,
+            totalLineCount: totalLineCount,
+            keptLineCount: keptLineCount,
+            wasTruncated: wasTruncated
+        )
+    }
+
     public var headerLabel: String {
         guard let modifiedAt else {
             return presentedPath

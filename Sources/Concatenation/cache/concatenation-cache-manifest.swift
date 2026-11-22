@@ -5,7 +5,7 @@ public struct ConcatenationCacheManifest:
     Sendable,
     Codable
 {
-    public static let currentVersion = 5
+    public static let currentVersion = 6
 
     public let version: Int
     public let output: URL
@@ -39,16 +39,35 @@ public struct ConcatenationCachedSource:
 {
     public let metadata: FileMetadataSnapshot
     public let contentFingerprint: ContentFingerprint
+    /// Everything that shapes this source in its output, header included.
     public let transformationFingerprint: ContentFingerprint
+    /// Only what shapes the section's lines; with `contentFingerprint` it
+    /// names the shared section file.
+    public let bodyFingerprint: ContentFingerprint
 
     public init(
         metadata: FileMetadataSnapshot,
         contentFingerprint: ContentFingerprint,
-        transformationFingerprint: ContentFingerprint
+        transformationFingerprint: ContentFingerprint,
+        bodyFingerprint: ContentFingerprint
     ) {
         self.metadata = metadata
         self.contentFingerprint = contentFingerprint
         self.transformationFingerprint = transformationFingerprint
+        self.bodyFingerprint = bodyFingerprint
+    }
+
+    init(
+        metadata: FileMetadataSnapshot,
+        contentFingerprint: ContentFingerprint,
+        transformationFingerprint fingerprint: ConcatenationSectionFingerprint
+    ) {
+        self.init(
+            metadata: metadata,
+            contentFingerprint: contentFingerprint,
+            transformationFingerprint: fingerprint.transformation,
+            bodyFingerprint: fingerprint.body
+        )
     }
 
     public var file: URL {
@@ -60,8 +79,8 @@ public struct ConcatenationCachedSource:
             for: [
                 contentFingerprint.algorithm,
                 contentFingerprint.value,
-                transformationFingerprint.algorithm,
-                transformationFingerprint.value,
+                bodyFingerprint.algorithm,
+                bodyFingerprint.value,
             ].joined(
                 separator: ":"
             )

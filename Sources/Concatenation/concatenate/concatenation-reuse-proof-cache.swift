@@ -15,6 +15,41 @@ struct ConcatenationSectionTransformation:
     let maxLinesPerFile: Int?
     let obscurations: [String: String]
     let modifiedAt: Date?
+
+    /// What changes the section's lines: everything except the header
+    /// (`presentedPath`, `modifiedAt`). Keys the shared section pool, so one
+    /// body serves every output that shows the same content differently.
+    var body: ConcatenationSectionBodyTransformation {
+        .init(
+            version: 1,
+            selections: selections,
+            trimBlankLines: trimBlankLines,
+            maxLinesPerFile: maxLinesPerFile,
+            obscurations: obscurations
+        )
+    }
+}
+
+struct ConcatenationSectionBodyTransformation:
+    Encodable,
+    Hashable,
+    Sendable
+{
+    let version: Int
+    let selections: [ContentSelection]
+    let trimBlankLines: Bool
+    let maxLinesPerFile: Int?
+    let obscurations: [String: String]
+}
+
+/// The full transformation (decides reuse of a source in an output) and the
+/// body transformation (names the shared section file).
+struct ConcatenationSectionFingerprint:
+    Hashable,
+    Sendable
+{
+    let transformation: ContentFingerprint
+    let body: ContentFingerprint
 }
 
 struct ConcatenationReuseProofCacheSnapshot:
@@ -34,7 +69,7 @@ final class ConcatenationReuseProofCache:
 
     private var fingerprints: [
         ConcatenationSectionTransformation:
-            ContentFingerprint
+            ConcatenationSectionFingerprint
     ] = [:]
 
     private var lookupCount =
@@ -49,8 +84,8 @@ final class ConcatenationReuseProofCache:
     func fingerprint(
         for transformation:
             ConcatenationSectionTransformation,
-        compute: () throws -> ContentFingerprint
-    ) throws -> ContentFingerprint {
+        compute: () throws -> ConcatenationSectionFingerprint
+    ) throws -> ConcatenationSectionFingerprint {
         lock.lock()
 
         lookupCount += 1

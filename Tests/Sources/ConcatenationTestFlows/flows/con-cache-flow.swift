@@ -370,6 +370,100 @@ extension ConcatenationFlowSuite {
                 )
             }
 
+            Step("outputs showing one file differently share its section body") {
+                let fixture = try ConcatenationCacheFixture(
+                    "shared-body"
+                )
+
+                defer {
+                    fixture.remove()
+                }
+
+                try fixture.writeSource(
+                    """
+                    alpha
+                    beta
+                    """
+                )
+
+                let otherOutput = fixture.root.appendingPathComponent(
+                    "other-output.txt",
+                    isDirectory: false
+                )
+
+                func concatenator(
+                    output: URL,
+                    shownAs presented: String
+                ) -> FileConcatenator {
+                    FileConcatenator(
+                        inputFiles: [
+                            fixture.source,
+                        ],
+                        outputURL: output,
+                        cache: ConcatenationCacheBinding(
+                            storage: fixture.store,
+                            scope: output
+                        ),
+                        presentedPathByFile: [
+                            fixture.source: presented,
+                        ],
+                        trimBlankLines: true,
+                        includeSourceModifiedAt: false,
+                        protectSecrets: false,
+                        deepSecretInspection: false
+                    )
+                }
+
+                _ = try concatenator(
+                    output: fixture.output,
+                    shownAs: "first/source.txt"
+                ).document()
+
+                _ = try concatenator(
+                    output: otherOutput,
+                    shownAs: "second/source.txt"
+                ).document()
+
+                let sectionFiles = try FileSystem.default
+                    .directory
+                    .contents(
+                        fixture.cacheRoot.sections
+                    )
+                    .flatMap {
+                        try FileSystem.default.directory.contents($0)
+                    }
+                    .filter {
+                        $0.pathExtension == "json"
+                    }
+
+                try Expect.equal(
+                    sectionFiles.count,
+                    1,
+                    "cache.shared-body-one-section-file"
+                )
+
+                // The pooled body was last written for the second output; a
+                // warm load for the first must come back under its own header.
+                let warmFirst = try concatenator(
+                    output: fixture.output,
+                    shownAs: "first/source.txt"
+                ).document()
+
+                try Expect.equal(
+                    warmFirst.statistics.cache.sourceReads,
+                    0,
+                    "cache.shared-body-warm-no-read"
+                )
+
+                try Expect.equal(
+                    warmFirst.sections.map(\.presentedPath),
+                    [
+                        "first/source.txt",
+                    ],
+                    "cache.shared-body-rebound-header"
+                )
+            }
+
             Step("document creates manifest and exact metadata reuses cached section") {
                 let fixture = try ConcatenationCacheFixture(
                     "reuse"

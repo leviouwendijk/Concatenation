@@ -9,15 +9,18 @@ public struct ConcatenationSourceRecord:
     public let metadata: FileMetadataSnapshot
     public let contentFingerprint: ContentFingerprint
     public let transformationFingerprint: ContentFingerprint
+    public let bodyFingerprint: ContentFingerprint
 
     public init(
         metadata: FileMetadataSnapshot,
         contentFingerprint: ContentFingerprint,
-        transformationFingerprint: ContentFingerprint
+        transformationFingerprint: ContentFingerprint,
+        bodyFingerprint: ContentFingerprint
     ) {
         self.metadata = metadata
         self.contentFingerprint = contentFingerprint
         self.transformationFingerprint = transformationFingerprint
+        self.bodyFingerprint = bodyFingerprint
     }
 
     public init(
@@ -27,7 +30,9 @@ public struct ConcatenationSourceRecord:
             metadata: source.metadata,
             contentFingerprint: source.contentFingerprint,
             transformationFingerprint:
-                source.transformationFingerprint
+                source.transformationFingerprint,
+            bodyFingerprint:
+                source.bodyFingerprint
         )
     }
 
@@ -40,7 +45,9 @@ public struct ConcatenationSourceRecord:
             metadata: metadata,
             contentFingerprint: contentFingerprint,
             transformationFingerprint:
-                transformationFingerprint
+                transformationFingerprint,
+            bodyFingerprint:
+                bodyFingerprint
         )
         .sectionKey
     }
