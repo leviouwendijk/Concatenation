@@ -334,8 +334,7 @@ internal enum CacheBackendBenchmark {
 
         let disk =
             ConcatenationDiskCache(
-                workspace:
-                    fixture.workspace
+                root: fixture.cacheRoot
             )
 
         var values: [Sample] = []
@@ -413,9 +412,8 @@ internal enum CacheBackendBenchmark {
                             ConcatenationMemoryCache(),
                         disk:
                             ConcatenationDiskCache(
-                                workspace:
-                                    fixture.workspace
-                            )
+                root: fixture.cacheRoot
+            )
                     )
             )
 

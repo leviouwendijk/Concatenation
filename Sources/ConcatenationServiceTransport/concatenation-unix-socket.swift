@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import IO
 
 internal enum ConcatenationUnixSocket {
     static let maximumMessageSize = 64 * 1024 * 1024
@@ -288,6 +289,10 @@ private extension ConcatenationUnixSocket {
         let parent = endpoint.url
             .deletingLastPathComponent()
 
+        let parentExisted = FileSystem.default.exists(
+            parent
+        )
+
         try manager.createDirectory(
             at: parent,
             withIntermediateDirectories: true,
@@ -295,6 +300,14 @@ private extension ConcatenationUnixSocket {
                 .posixPermissions: 0o700,
             ]
         )
+
+        // The default endpoint lives in the cache root; whoever creates the
+        // root keeps it out of backups.
+        if !parentExisted {
+            try FileSystem.default.excludeFromBackup(
+                parent
+            )
+        }
 
         guard manager.fileExists(
             atPath: endpoint.path

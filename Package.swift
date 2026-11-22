@@ -71,6 +71,7 @@ let package = Package(
             dependencies: [
                 .target(name: "Concatenation"),
                 .target(name: "ConcatenationLegacy"),
+                .product(name: "IO", package: "IO"),
             ]
         ),
         .executableTarget(

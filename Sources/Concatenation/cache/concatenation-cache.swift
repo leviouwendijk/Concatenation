@@ -84,6 +84,8 @@ public extension ConcatenationCache {
                     manifest.version,
                 output:
                     manifest.output,
+                configuration:
+                    manifest.configuration,
                 sources:
                     retainedSources,
                 safeguards:
@@ -102,16 +104,21 @@ public struct ConcatenationCacheBinding:
         any ConcatenationCache
 
     public let scope: URL
+    public let configuration: URL?
 
     public init(
         storage: any ConcatenationCache,
-        scope: URL
+        scope: URL,
+        configuration: URL? = nil
     ) {
         self.storage =
             storage
 
         self.scope =
             scope.standardizedFileURL
+
+        self.configuration =
+            configuration?.standardizedFileURL
     }
 
     public func load() throws
@@ -131,6 +138,8 @@ public struct ConcatenationCacheBinding:
             .init(
                 output:
                     scope,
+                configuration:
+                    configuration,
                 sources:
                     sources,
                 safeguards:

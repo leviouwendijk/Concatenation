@@ -139,8 +139,11 @@ extension ConcatenationFlowSuite {
                     "conany.nesting.output-url"
                 )
 
-                let workspace = ConcatenationWorkspace(
-                    root: root
+                let cacheRoot = ConcatenationCacheRoot(
+                    url: root.appendingPathComponent(
+                        "cache-root",
+                        isDirectory: true
+                    )
                 )
 
                 let concatenator = FileConcatenator(
@@ -148,7 +151,12 @@ extension ConcatenationFlowSuite {
                         source,
                     ],
                     outputURL: output,
-                    workspace: workspace,
+                    cache: ConcatenationCacheBinding(
+                        storage: ConcatenationCacheStore(
+                            root: cacheRoot
+                        ),
+                        scope: output
+                    ),
                     presentedPathByFile: [
                         source: "source.txt",
                     ],
@@ -200,67 +208,30 @@ extension ConcatenationFlowSuite {
                     "conany.nesting.rendered-content"
                 )
 
-                let expectedManifest = workspace.cache
-                    .appendingPathComponent(
-                        "one",
-                        isDirectory: true
-                    )
-                    .appendingPathComponent(
-                        "two",
-                        isDirectory: true
-                    )
-                    .appendingPathComponent(
-                        "three",
-                        isDirectory: true
-                    )
-                    .appendingPathComponent(
-                        "deep.txt.json",
-                        isDirectory: false
-                    )
-
-                try Expect.equal(
-                    workspace.cacheManifest(
-                        for: output
-                    ),
-                    expectedManifest,
-                    "conany.nesting.cache-manifest-path"
+                let store = ConcatenationCacheStore(
+                    root: cacheRoot
                 )
 
-                let manifestMetadata = try FileInspector(
-                    expectedManifest
-                ).inspect()
-
-                try Expect.true(
-                    manifestMetadata.existed,
+                let manifest = try Expect.notNil(
+                    try store.load(
+                        for: output
+                    ),
                     "conany.nesting.cache-manifest-exists"
                 )
 
-                let sections = workspace.cachedSections(
-                    for: output
+                try Expect.equal(
+                    manifest.sources.count,
+                    1,
+                    "conany.nesting.cached-source-count"
                 )
-
-                let sectionsMetadata = try FileInspector(
-                    sections
-                ).inspect()
 
                 try Expect.true(
-                    sectionsMetadata.existed,
-                    "conany.nesting.sections-exist"
-                )
-
-                let cachedSections = try FileSystem.default
-                    .directory
-                    .contents(
-                        sections
-                    )
-                    .filter {
-                        $0.pathExtension == "json"
-                    }
-
-                try Expect.equal(
-                    cachedSections.count,
-                    1,
-                    "conany.nesting.cached-section-count"
+                    FileSystem.default.exists(
+                        cacheRoot.section(
+                            key: manifest.sources[0].sectionKey
+                        )
+                    ),
+                    "conany.nesting.cached-section-exists"
                 )
 
                 let warm = try concatenator.write()

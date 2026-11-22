@@ -3,23 +3,27 @@ import IO
 import Readers
 import Writers
 
+/// Manifests per output and one section pool shared by every output, under
+/// a `ConcatenationCacheRoot`. Sections are content-addressed and written
+/// atomically, so concurrent runs writing the same key cannot corrupt it;
+/// nothing is pruned on save (`con clean` collects garbage).
 public struct ConcatenationCacheStore:
     ConcatenationCache,
     Sendable
 {
-    public let workspace: ConcatenationWorkspace
+    public let root: ConcatenationCacheRoot
 
     public init(
-        workspace: ConcatenationWorkspace
+        root: ConcatenationCacheRoot = .default
     ) {
-        self.workspace = workspace
+        self.root = root
     }
 
     public func load(
         for output: URL
     ) throws -> ConcatenationCacheManifest? {
         let output = output.standardizedFileURL
-        let url = workspace.cacheManifest(
+        let url = root.manifest(
             for: output
         )
 
@@ -58,7 +62,9 @@ public struct ConcatenationCacheStore:
     public func save(
         _ manifest: ConcatenationCacheManifest
     ) throws {
-        let url = workspace.cacheManifest(
+        try root.prepare()
+
+        let url = root.manifest(
             for: manifest.output
         )
 
@@ -66,19 +72,13 @@ public struct ConcatenationCacheStore:
             url.deletingLastPathComponent()
         )
 
-        let data = try encoder().encode(
-            manifest
-        )
-
         try StandardWriter(
             url
         ).write(
-            data,
+            try encoder().encode(
+                manifest
+            ),
             options: .overwriteWithoutBackup
-        )
-
-        try pruneSections(
-            referencedBy: manifest
         )
     }
 
@@ -86,8 +86,7 @@ public struct ConcatenationCacheStore:
         for output: URL,
         key: String
     ) throws -> ConcatenationSection? {
-        let url = workspace.cachedSection(
-            for: output,
+        let url = root.section(
             key: key
         )
 
@@ -120,8 +119,9 @@ public struct ConcatenationCacheStore:
         for output: URL,
         key: String
     ) throws {
-        let url = workspace.cachedSection(
-            for: output,
+        try root.prepare()
+
+        let url = root.section(
             key: key
         )
 
@@ -142,48 +142,6 @@ public struct ConcatenationCacheStore:
 }
 
 private extension ConcatenationCacheStore {
-    func pruneSections(
-        referencedBy manifest: ConcatenationCacheManifest
-    ) throws {
-        let directory = workspace.cachedSections(
-            for: manifest.output
-        )
-
-        guard FileManager.default.fileExists(
-            atPath: directory.path
-        ) else {
-            return
-        }
-
-        let referenced = Set(
-            manifest.sources.map {
-                $0.sectionKey + ".json"
-            }
-        )
-
-        let cached = try FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil,
-            options: [
-                .skipsHiddenFiles,
-            ]
-        )
-
-        for url in cached {
-            guard url.pathExtension == "json",
-                  !referenced.contains(
-                    url.lastPathComponent
-                  )
-            else {
-                continue
-            }
-
-            try FileSystem.default.remove(
-                url
-            )
-        }
-    }
-
     func sectionEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
 

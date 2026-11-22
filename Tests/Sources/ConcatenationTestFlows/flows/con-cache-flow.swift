@@ -1,5 +1,5 @@
 import Foundation
-import Concatenation
+@_spi(Testing) import Concatenation
 import IO
 import Readers
 import Writers
@@ -299,77 +299,74 @@ extension ConcatenationFlowSuite {
                 )
             }
 
-            Step("workspace maps internal and external cache manifests") {
-                let fixture = try ConcatenationCacheFixture(
-                    "workspace"
+            Step("cache root maps manifests per output and one shared section pool") {
+                let home = URL(
+                    fileURLWithPath: "/Users/someone",
+                    isDirectory: true
                 )
 
-                defer {
-                    fixture.remove()
-                }
-
-                let nestedOutput = fixture.root
-                    .appendingPathComponent(
-                        "reports",
-                        isDirectory: true
-                    )
-                    .appendingPathComponent(
-                        "context.txt",
-                        isDirectory: false
-                    )
-
-                let expectedInternal = fixture.workspace.cache
-                    .appendingPathComponent(
-                        "reports",
-                        isDirectory: true
-                    )
-                    .appendingPathComponent(
-                        "context.txt.json",
-                        isDirectory: false
-                    )
+                try Expect.equal(
+                    ConcatenationCacheRoot.resolved(
+                        environment: [:],
+                        home: home
+                    ).url.path,
+                    "/Users/someone/.cache/concatenation",
+                    "cache.root-default-home"
+                )
 
                 try Expect.equal(
-                    fixture.workspace.cacheManifest(
-                        for: nestedOutput
+                    ConcatenationCacheRoot.resolved(
+                        environment: [
+                            "XDG_CACHE_HOME": "/var/xdg",
+                        ],
+                        home: home
+                    ).url.path,
+                    "/var/xdg/concatenation",
+                    "cache.root-xdg"
+                )
+
+                try Expect.equal(
+                    ConcatenationCacheRoot.resolved(
+                        environment: [
+                            "XDG_CACHE_HOME": "/var/xdg",
+                            "CON_CACHE_DIR": "/var/con",
+                        ],
+                        home: home
+                    ).url.path,
+                    "/var/con",
+                    "cache.root-explicit-wins"
+                )
+
+                let root = ConcatenationCacheRoot(
+                    url: URL(
+                        fileURLWithPath: "/var/con",
+                        isDirectory: true
+                    )
+                )
+
+                try Expect.equal(
+                    root.manifest(
+                        for: URL(fileURLWithPath: "/a/out.txt")
+                    ).deletingLastPathComponent().path,
+                    "/var/con/caches/manifests",
+                    "cache.root-manifest-directory"
+                )
+
+                try Expect.true(
+                    root.manifest(
+                        for: URL(fileURLWithPath: "/a/out.txt")
+                    ) != root.manifest(
+                        for: URL(fileURLWithPath: "/b/out.txt")
                     ),
-                    expectedInternal,
-                    "cache.internal-manifest"
+                    "cache.root-manifest-per-output"
                 )
 
                 try Expect.equal(
-                    fixture.workspace.cachedSections(
-                        for: nestedOutput
-                    ),
-                    expectedInternal
-                        .deletingLastPathComponent()
-                        .appendingPathComponent(
-                            "context.txt.sections",
-                            isDirectory: true
-                        ),
-                    "cache.internal-sections"
-                )
-
-                let externalOutput = fixture.root
-                    .deletingLastPathComponent()
-                    .appendingPathComponent(
-                        "external-\(UUID().uuidString).txt",
-                        isDirectory: false
-                    )
-
-                let externalManifest = fixture.workspace.cacheManifest(
-                    for: externalOutput
-                )
-
-                let expectedExternalDirectory = fixture.workspace.cache
-                    .appendingPathComponent(
-                        "external",
-                        isDirectory: true
-                    )
-
-                try Expect.equal(
-                    externalManifest.deletingLastPathComponent(),
-                    expectedExternalDirectory,
-                    "cache.external-directory"
+                    root.section(
+                        key: "abcdef"
+                    ).path,
+                    "/var/con/caches/sections/ab/abcdef.json",
+                    "cache.root-section-path"
                 )
             }
 
@@ -479,8 +476,7 @@ extension ConcatenationFlowSuite {
                 )
 
                 try FileSystem.default.remove(
-                    fixture.workspace.cachedSection(
-                        for: fixture.output,
+                    fixture.cacheRoot.section(
                         key: cached.sectionKey
                     )
                 )
@@ -514,8 +510,7 @@ extension ConcatenationFlowSuite {
                 )
 
                 try FileSystem.default.remove(
-                    fixture.workspace.cachedSection(
-                        for: fixture.output,
+                    fixture.cacheRoot.section(
                         key: cached.sectionKey
                     )
                 )
@@ -553,7 +548,7 @@ extension ConcatenationFlowSuite {
                 )
             }
 
-            Step("manifest save prunes stale section sidecars") {
+            Step("a changed source adds a section and keeps the old one for GC") {
                 let fixture = try ConcatenationCacheFixture(
                     "section-sidecar-pruning"
                 )
@@ -582,8 +577,7 @@ extension ConcatenationFlowSuite {
                 )
 
                 let firstKey = firstManifest.sources[0].sectionKey
-                let firstSidecar = fixture.workspace.cachedSection(
-                    for: fixture.output,
+                let firstSidecar = fixture.cacheRoot.section(
                     key: firstKey
                 )
 
@@ -613,8 +607,7 @@ extension ConcatenationFlowSuite {
                 )
 
                 let secondKey = secondManifest.sources[0].sectionKey
-                let secondSidecar = fixture.workspace.cachedSection(
-                    for: fixture.output,
+                let secondSidecar = fixture.cacheRoot.section(
                     key: secondKey
                 )
 
@@ -623,11 +616,13 @@ extension ConcatenationFlowSuite {
                     "cache.sidecar-prune-key-changed"
                 )
 
+                // The pool is shared, so saving never prunes; `con clean`
+                // collects sections no manifest references.
                 try Expect.true(
-                    !FileSystem.default.exists(
+                    FileSystem.default.exists(
                         firstSidecar
                     ),
-                    "cache.sidecar-prune-old-removed"
+                    "cache.sidecar-old-kept-for-gc"
                 )
 
                 try Expect.true(
@@ -1615,7 +1610,7 @@ extension ConcatenationFlowSuite {
                 )
 
                 try FileSystem.default.remove(
-                    fixture.workspace.state
+                    fixture.cacheRoot.url
                 )
 
                 let asyncCold = try await concatenator.document(
@@ -1927,7 +1922,10 @@ extension ConcatenationFlowSuite {
                 let concatenator = FileConcatenator(
                     inputFiles: sources,
                     outputURL: fixture.output,
-                    workspace: fixture.workspace,
+                    cache: ConcatenationCacheBinding(
+                        storage: fixture.store,
+                        scope: fixture.output
+                    ),
                     trimBlankLines: true,
                     includeSourceModifiedAt: false,
                     protectSecrets: true,
@@ -2496,7 +2494,7 @@ extension ConcatenationFlowSuite {
 
                 _ = try concatenator.document()
 
-                let manifestURL = fixture.workspace.cacheManifest(
+                let manifestURL = fixture.cacheRoot.manifest(
                     for: fixture.output
                 )
 
@@ -2535,7 +2533,7 @@ private struct ConcatenationMultiCacheFixture {
     let root: URL
     let output: URL
 
-    let workspace: ConcatenationWorkspace
+    let cacheRoot: ConcatenationCacheRoot
     let store: ConcatenationCacheStore
 
     init(
@@ -2550,8 +2548,11 @@ private struct ConcatenationMultiCacheFixture {
             isDirectory: true
         )
 
-        let workspace = ConcatenationWorkspace(
-            root: root
+        let cacheRoot = ConcatenationCacheRoot(
+            url: root.appendingPathComponent(
+                "cache-root",
+                isDirectory: true
+            )
         )
 
         self.root = root
@@ -2559,9 +2560,9 @@ private struct ConcatenationMultiCacheFixture {
             "output.txt",
             isDirectory: false
         )
-        self.workspace = workspace
+        self.cacheRoot = cacheRoot
         self.store = ConcatenationCacheStore(
-            workspace: workspace
+            root: cacheRoot
         )
 
         try FileSystem.default.directory.create(
@@ -2609,7 +2610,10 @@ private struct ConcatenationMultiCacheFixture {
         FileConcatenator(
             inputFiles: sources,
             outputURL: output,
-            workspace: workspace,
+            cache: ConcatenationCacheBinding(
+                storage: store,
+                scope: output
+            ),
             presentedPathByFile: presentedPathByFile,
             trimBlankLines: true,
             includeSourceModifiedAt: false,
@@ -2630,7 +2634,7 @@ private struct ConcatenationCacheFixture {
     let source: URL
     let output: URL
 
-    let workspace: ConcatenationWorkspace
+    let cacheRoot: ConcatenationCacheRoot
     let store: ConcatenationCacheStore
 
     init(
@@ -2645,8 +2649,11 @@ private struct ConcatenationCacheFixture {
             isDirectory: true
         )
 
-        let workspace = ConcatenationWorkspace(
-            root: root
+        let cacheRoot = ConcatenationCacheRoot(
+            url: root.appendingPathComponent(
+                "cache-root",
+                isDirectory: true
+            )
         )
 
         self.root = root
@@ -2658,9 +2665,9 @@ private struct ConcatenationCacheFixture {
             "output.txt",
             isDirectory: false
         )
-        self.workspace = workspace
+        self.cacheRoot = cacheRoot
         self.store = ConcatenationCacheStore(
-            workspace: workspace
+            root: cacheRoot
         )
 
         try FileSystem.default.directory.create(
@@ -2712,7 +2719,10 @@ private struct ConcatenationCacheFixture {
                 source,
             ],
             outputURL: output,
-            workspace: workspace,
+            cache: ConcatenationCacheBinding(
+                storage: store,
+                scope: output
+            ),
             trimBlankLines: trimBlankLines,
             includeSourceModifiedAt: includeSourceModifiedAt,
             protectSecrets: protectSecrets,

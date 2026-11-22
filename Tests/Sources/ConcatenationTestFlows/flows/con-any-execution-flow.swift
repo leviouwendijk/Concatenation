@@ -110,6 +110,13 @@ extension ConcatenationFlowSuite {
                     options: .overwriteWithoutBackup
                 )
 
+                let cacheRoot = ConcatenationCacheRoot(
+                    url: root.appendingPathComponent(
+                        "cache-root",
+                        isDirectory: true
+                    )
+                )
+
                 let execution = try ConcatenationExecution(
                     conAnyAt: configURL,
                     options: .init(
@@ -120,6 +127,7 @@ extension ConcatenationFlowSuite {
                         outputFormat: .text,
                         includeSourceLineNumbers: true,
                         includeSourceModifiedAt: false,
+                        cacheRoot: cacheRoot,
                         protectSecrets: false,
                         deepSecretInspection: false
                     )
@@ -368,7 +376,7 @@ extension ConcatenationFlowSuite {
                     isDirectory: false
                 )
 
-                let cache = root.appendingPathComponent(
+                let localCache = root.appendingPathComponent(
                     ".concatenation",
                     isDirectory: true
                 )
@@ -389,7 +397,9 @@ extension ConcatenationFlowSuite {
 
                 try Expect.true(
                     !FileSystem.default.exists(
-                        cache
+                        cacheRoot.manifest(
+                            for: outputA
+                        )
                     ),
                     "conany.execution.render-no-cache"
                 )
@@ -487,9 +497,28 @@ extension ConcatenationFlowSuite {
 
                 try Expect.true(
                     FileSystem.default.exists(
-                        cache
+                        cacheRoot.manifest(
+                            for: outputA
+                        )
                     ),
                     "conany.execution.write-cache"
+                )
+
+                try Expect.true(
+                    !FileSystem.default.exists(
+                        localCache
+                    ),
+                    "conany.execution.write-no-local-cache"
+                )
+
+                try Expect.equal(
+                    try ConcatenationCacheStore(
+                        root: cacheRoot
+                    ).load(
+                        for: outputA
+                    )?.configuration,
+                    configURL.standardizedFileURL,
+                    "conany.execution.write-manifest-configuration"
                 )
 
                 let contextIndex = root.appendingPathComponent(

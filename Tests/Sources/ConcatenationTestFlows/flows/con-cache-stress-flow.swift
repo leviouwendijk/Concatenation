@@ -552,7 +552,7 @@ extension ConcatenationFlowSuite {
                 )
 
                 let store = ConcatenationCacheStore(
-                    workspace: fixture.workspace
+                    root: fixture.cacheRoot
                 )
 
                 let manifest = try Expect.notNil(
@@ -670,7 +670,7 @@ extension ConcatenationFlowSuite {
                 )
 
                 let store = ConcatenationCacheStore(
-                    workspace: fixture.workspace
+                    root: fixture.cacheRoot
                 )
 
                 let current = try Expect.notNil(
@@ -936,7 +936,7 @@ private func stableSectionEncoding(
 private struct ConcatenationStressFixture {
     let root: URL
     let output: URL
-    let workspace: ConcatenationWorkspace
+    let cacheRoot: ConcatenationCacheRoot
 
     init(
         _ name: String
@@ -955,8 +955,11 @@ private struct ConcatenationStressFixture {
             "output.txt",
             isDirectory: false
         )
-        self.workspace = ConcatenationWorkspace(
-            root: root
+        self.cacheRoot = ConcatenationCacheRoot(
+            url: root.appendingPathComponent(
+                "cache-root",
+                isDirectory: true
+            )
         )
 
         try FileSystem.default.directory.create(
@@ -1002,8 +1005,13 @@ private struct ConcatenationStressFixture {
         FileConcatenator(
             inputFiles: sources,
             outputURL: output,
-            workspace: cached
-                ? workspace
+            cache: cached
+                ? ConcatenationCacheBinding(
+                    storage: ConcatenationCacheStore(
+                        root: cacheRoot
+                    ),
+                    scope: output
+                )
                 : nil,
             presentedPathByFile: presentedPathByFile,
             delimiterStyle: delimiterStyle,

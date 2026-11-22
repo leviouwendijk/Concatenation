@@ -5,10 +5,13 @@ public struct ConcatenationCacheManifest:
     Sendable,
     Codable
 {
-    public static let currentVersion = 4
+    public static let currentVersion = 5
 
     public let version: Int
     public let output: URL
+    /// The file that declared `output`, when one did (`.conany`,
+    /// `con.frame`); `con clean` uses it to find outputs it no longer declares.
+    public let configuration: URL?
     public let sources: [ConcatenationCachedSource]
     public let safeguards: [ConcatenationCachedSafeguard]
     public let artifact: ConcatenationCachedArtifact?
@@ -16,12 +19,14 @@ public struct ConcatenationCacheManifest:
     public init(
         version: Int = Self.currentVersion,
         output: URL,
+        configuration: URL? = nil,
         sources: [ConcatenationCachedSource],
         safeguards: [ConcatenationCachedSafeguard] = [],
         artifact: ConcatenationCachedArtifact? = nil
     ) {
         self.version = version
         self.output = output.standardizedFileURL
+        self.configuration = configuration?.standardizedFileURL
         self.sources = sources
         self.safeguards = safeguards
         self.artifact = artifact

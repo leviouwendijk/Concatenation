@@ -1,3 +1,4 @@
+import Concatenation
 import Foundation
 
 public struct ConcatenationServiceEndpoint:
@@ -13,23 +14,10 @@ public struct ConcatenationServiceEndpoint:
         self.url = url.standardizedFileURL
     }
 
+    /// `service.sock` under the cache root (`~/.cache/concatenation`).
     public static var `default`: Self {
-        let manager = FileManager.default
-        let base = manager.urls(
-            for: .cachesDirectory,
-            in: .userDomainMask
-        ).first ?? manager.temporaryDirectory
-
-        return .init(
-            url: base
-                .appendingPathComponent(
-                    "Concatenation",
-                    isDirectory: true
-                )
-                .appendingPathComponent(
-                    "service.sock",
-                    isDirectory: false
-                )
+        .init(
+            url: ConcatenationCacheRoot.default.serviceSocket
         )
     }
 

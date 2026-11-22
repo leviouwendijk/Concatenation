@@ -16,6 +16,8 @@ public struct ConcatenationExecutionOptions: Sendable {
     public var includeSourceModifiedAt: Bool
     /// Literal value → obscuring method (`redact`, `preserve`, `verbose`).
     public var obscurations: [String: String]
+    /// Where written outputs keep their manifests and sections.
+    public var cacheRoot: ConcatenationCacheRoot
 
     public var protectSecrets: Bool
     public var allowSecrets: Bool
@@ -33,6 +35,7 @@ public struct ConcatenationExecutionOptions: Sendable {
         includeSourceLineNumbers: Bool = false,
         includeSourceModifiedAt: Bool = false,
         obscurations: [String: String] = [:],
+        cacheRoot: ConcatenationCacheRoot = .default,
         protectSecrets: Bool = true,
         allowSecrets: Bool = false,
         failOnBlockedFiles: Bool = false,
@@ -49,6 +52,7 @@ public struct ConcatenationExecutionOptions: Sendable {
         self.includeSourceLineNumbers = includeSourceLineNumbers
         self.includeSourceModifiedAt = includeSourceModifiedAt
         self.obscurations = obscurations
+        self.cacheRoot = cacheRoot
 
         self.protectSecrets = protectSecrets
         self.allowSecrets = allowSecrets
@@ -776,8 +780,8 @@ public struct ConcatenationExecution: SafelyConcatenatable {
         let reuseProofCache =
             ConcatenationReuseProofCache()
 
-        let workspace = ConcatenationWorkspace(
-            configuration: definition.configuration
+        let store = ConcatenationCacheStore(
+            root: options.cacheRoot
         )
 
         var outputs: [ConcatenationWrittenOutput] = []
@@ -817,7 +821,11 @@ public struct ConcatenationExecution: SafelyConcatenatable {
             let concatenator = makeConcatenator(
                 for: output,
                 outputURL: output.outputURL,
-                workspace: workspace,
+                cache: ConcatenationCacheBinding(
+                    storage: store,
+                    scope: output.outputURL,
+                    configuration: definition.configuration
+                ),
                 sourcePreflight:
                     sourcePreflightResult.preflight,
                 reuseProofCache:
@@ -932,7 +940,6 @@ private extension ConcatenationExecution {
             let concatenator = makeConcatenator(
                 for: output,
                 outputURL: nil,
-                workspace: nil,
                 cache: session?.binding(
                     for: output.outputURL
                 )
@@ -960,7 +967,6 @@ private extension ConcatenationExecution {
     func makeConcatenator(
         for resolved: ConcatenationResolvedOutput,
         outputURL: URL?,
-        workspace: ConcatenationWorkspace?,
         cache: ConcatenationCacheBinding? = nil,
         sourcePreflight:
             ConcatenationSourcePreflight? = nil,
@@ -972,8 +978,6 @@ private extension ConcatenationExecution {
                 resolved.plan,
             outputURL:
                 outputURL,
-            workspace:
-                workspace,
             cache:
                 cache,
 

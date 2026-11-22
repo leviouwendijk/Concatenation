@@ -290,7 +290,7 @@ internal final class BenchmarkFixture {
     let scale: BenchmarkScale
     let root: URL
     let output: URL
-    let workspace: ConcatenationWorkspace
+    let cacheRoot: ConcatenationCacheRoot
     let sources: [URL]
     let deepInspection: Bool
 
@@ -314,8 +314,11 @@ internal final class BenchmarkFixture {
             "output.txt",
             isDirectory: false
         )
-        self.workspace = ConcatenationWorkspace(
-            root: root
+        self.cacheRoot = ConcatenationCacheRoot(
+            url: root.appendingPathComponent(
+                "cache-root",
+                isDirectory: true
+            )
         )
 
         try FileManager.default.createDirectory(
@@ -358,7 +361,12 @@ internal final class BenchmarkFixture {
         FileConcatenator(
             inputFiles: sources,
             outputURL: output,
-            workspace: workspace,
+            cache: ConcatenationCacheBinding(
+                storage: ConcatenationCacheStore(
+                    root: cacheRoot
+                ),
+                scope: output
+            ),
             maxLinesPerFile: nil,
             trimBlankLines: true,
             relativePaths: false,
@@ -724,10 +732,10 @@ internal final class BenchmarkFixture {
         let fileManager = FileManager.default
 
         if fileManager.fileExists(
-            atPath: workspace.state.path
+            atPath: cacheRoot.url.path
         ) {
             try fileManager.removeItem(
-                at: workspace.state
+                at: cacheRoot.url
             )
         }
 

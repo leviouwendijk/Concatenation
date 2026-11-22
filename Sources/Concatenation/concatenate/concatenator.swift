@@ -11,7 +11,6 @@ import Selection
 public struct FileConcatenator: SafelyConcatenatable {
     public let plan: ConcatenationPlan
     public let outputURL: URL?
-    public let workspace: ConcatenationWorkspace?
     public let cache: ConcatenationCacheBinding?
 
     private var sourcePreflight:
@@ -126,7 +125,6 @@ public struct FileConcatenator: SafelyConcatenatable {
     public init(
         plan: ConcatenationPlan,
         outputURL: URL? = nil,
-        workspace: ConcatenationWorkspace? = nil,
         cache: ConcatenationCacheBinding? = nil,
 
         requiresRenderedText: Bool = false,
@@ -146,28 +144,8 @@ public struct FileConcatenator: SafelyConcatenatable {
         self.outputURL =
             standardizedOutputURL
 
-        self.workspace =
-            workspace
-
-        if let cache {
-            self.cache =
-                cache
-        } else if let workspace,
-                  let standardizedOutputURL {
-            self.cache =
-                ConcatenationCacheBinding(
-                    storage:
-                        ConcatenationCacheStore(
-                            workspace:
-                                workspace
-                        ),
-                    scope:
-                        standardizedOutputURL
-                )
-        } else {
-            self.cache =
-                nil
-        }
+        self.cache =
+            cache
 
         self.requiresRenderedText =
             requiresRenderedText
@@ -213,7 +191,6 @@ public struct FileConcatenator: SafelyConcatenatable {
         inputFiles: [URL],
         outputURL: URL? = nil,
         context: ConcatenationContext? = nil,
-        workspace: ConcatenationWorkspace? = nil,
         cache: ConcatenationCacheBinding? = nil,
         selectedContentByFile: [URL: [ContentSelection]] = [:],
         presentedPathByFile: [URL: String] = [:],
@@ -337,8 +314,6 @@ public struct FileConcatenator: SafelyConcatenatable {
                 ),
             outputURL:
                 outputURL,
-            workspace:
-                workspace,
             cache:
                 cache,
             requiresRenderedText:
