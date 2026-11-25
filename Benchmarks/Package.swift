@@ -12,7 +12,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: ".."),
-        .package(url: "https://github.com/leviouwendijk/IO.git", branch: "master"),
+        .package(url: "https://github.com/swift-lco/IO.git", branch: "master"),
     ],
     targets: [
         .executableTarget(
