@@ -355,7 +355,7 @@ private extension ConAnyPathPorting {
     }
 
     /// A path written under another layout (`~/.config/partition/maps/*.frame`,
-    /// such as the former ~/myworkdir layout), ported to where it lives on this
+    /// such as a former directory layout), ported to where it lives on this
     /// machine. Nil without partition configuration, when no other map covers
     /// the path, or when the ported directory does not exist.
     static func translatedPartitionMappedPath(
