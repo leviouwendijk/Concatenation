@@ -63,6 +63,7 @@ let package = Package(
                 .product(name: "Selection", package: "Selection"),
                 .product(name: "SelectionParsing", package: "Selection"),
                 .product(name: "Partition", package: "Partition"),
+                .product(name: "PartitionFrame", package: "Partition"),
                 .product(name: "Writers", package: "Writers"),
             ]
         ),
